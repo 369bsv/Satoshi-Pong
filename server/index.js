@@ -73,20 +73,11 @@ app.get("/auth/handcash/callback", async (req, res) => {
   }
 });
 
-// ---------- Rooms ----------
-// HandCash's payment API caps amounts at 5 decimal places when denominated
-// in BTC/BSV -- that works out to a hard floor of 1000 satoshis (0.00001 BSV)
-// per payment. True single-satoshi payments aren't possible through this API,
-// so every amount here (hit fee, dev cut, challenge fee) must be a multiple
-// of 1000 sats or HandCash will reject it.
 const SATS_GRANULARITY = 1000;
 const MIN_HIT_FEE_SATS = SATS_GRANULARITY;
 function roundToGranularity(sats) {
   return Math.max(SATS_GRANULARITY, Math.round(sats / SATS_GRANULARITY) * SATS_GRANULARITY);
 }
-// Dev cut must ALSO be a multiple of 1000 sats (it's paid as a separate
-// receiver in the same transaction as the pot's share), and can legitimately
-// be 0 at low stakes -- that's fine, HandCash just omits that receiver then.
 function roundDevCut(hitFeeSats, devFeePercent) {
   const raw = hitFeeSats * (devFeePercent / 100);
   return Math.round(raw / SATS_GRANULARITY) * SATS_GRANULARITY;
@@ -118,14 +109,17 @@ app.post("/api/challenge", async (req, res) => {
   }
 
   const room = createRoom(hitFeeSats);
-  const joinUrl = `${req.protocol}://${req.get("host")}/?room=${room.code}`;
+  const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
+  const joinUrl = `${baseUrl.replace(/\/$/, "")}/${room.code}`;
+  const shortForm = joinUrl.replace(/^https?:\/\//, "");
+  const description = shortForm.length <= 25 ? shortForm : `SatoshiPong ${room.code}`;
 
   try {
     await handcash.paySats({
       fromAuthToken: session.authToken,
       toHandle,
       amountSats: CHALLENGE_FEE_SATS,
-      description: `SatoshiPong ${room.code}`,
+      description,
     });
     res.json({ code: room.code, hitFeeSats: room.hitFeeSats, joinUrl });
   } catch (err) {
@@ -137,6 +131,13 @@ app.post("/api/challenge", async (req, res) => {
 
 app.get("/api/leaderboard", (req, res) => {
   res.json(getLeaderboard());
+});
+
+const ROOM_CODE_PATTERN = /^[A-Z2-9]{6}$/i;
+app.get("/:code", (req, res, next) => {
+  const code = req.params.code.toUpperCase();
+  if (!ROOM_CODE_PATTERN.test(code)) return next();
+  res.redirect(`/?room=${code}`);
 });
 
 const activeLoops = new Map();
