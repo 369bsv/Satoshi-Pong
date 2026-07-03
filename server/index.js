@@ -9,17 +9,21 @@ const handcash = require("./handcash");
 const { createRoom, getRoom, deleteRoom, W, H } = require("./rooms");
 const { addLeaderboardEntry, getLeaderboard } = require("./store");
 
-const HIT_FEE_SATS = parseInt(process.env.HIT_FEE_SATS || "10", 10);
-const TICK_MS = 50; // 20Hz server tick
+const TICK_MS = 50;
 
 const HOUSE_HANDLE = process.env.HANDCASH_HOUSE_HANDLE;
 const HOUSE_AUTH_TOKEN = process.env.HANDCASH_HOUSE_AUTH_TOKEN;
+const DEV_HANDLE = process.env.HANDCASH_DEV_HANDLE;
+const DEV_FEE_PERCENT = parseFloat(process.env.DEV_FEE_PERCENT || "1");
 
 if (!process.env.HANDCASH_APP_ID || !process.env.HANDCASH_APP_SECRET) {
   console.warn("⚠️  HANDCASH_APP_ID / HANDCASH_APP_SECRET are not set. Auth will fail until you set them.");
 }
 if (!HOUSE_HANDLE || !HOUSE_AUTH_TOKEN) {
   console.warn("⚠️  HANDCASH_HOUSE_HANDLE / HANDCASH_HOUSE_AUTH_TOKEN are not set. Payments will fail until you set them.");
+}
+if (!DEV_HANDLE) {
+  console.warn("⚠️  HANDCASH_DEV_HANDLE is not set. No dev fee will be collected -- 100% of each hit goes to the pot.");
 }
 
 const app = express();
@@ -29,7 +33,6 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, "..", "public")));
 app.use(express.json());
 
-// ---------- HandCash OAuth ----------
 const sessions = new Map();
 
 app.get("/auth/handcash/login", (req, res) => {
@@ -57,17 +60,55 @@ app.get("/auth/handcash/callback", async (req, res) => {
   }
 });
 
-// ---------- Rooms ----------
+const MIN_HIT_FEE_SATS = 1;
+const MAX_HIT_FEE_SATS = 1000000;
+const CHALLENGE_FEE_SATS = parseInt(process.env.CHALLENGE_FEE_SATS || "1", 10);
+
 app.post("/api/rooms", (req, res) => {
-  const room = createRoom();
-  res.json({ code: room.code });
+  let hitFeeSats = parseInt(req.body?.hitFeeSats, 10);
+  if (!Number.isFinite(hitFeeSats) || hitFeeSats < MIN_HIT_FEE_SATS) hitFeeSats = MIN_HIT_FEE_SATS;
+  if (hitFeeSats > MAX_HIT_FEE_SATS) hitFeeSats = MAX_HIT_FEE_SATS;
+  const room = createRoom(hitFeeSats);
+  res.json({ code: room.code, hitFeeSats: room.hitFeeSats });
+});
+
+app.post("/api/challenge", async (req, res) => {
+  const { sessionId, toHandle: rawHandle } = req.body || {};
+  let hitFeeSats = parseInt(req.body?.hitFeeSats, 10);
+  if (!Number.isFinite(hitFeeSats) || hitFeeSats < MIN_HIT_FEE_SATS) hitFeeSats = MIN_HIT_FEE_SATS;
+  if (hitFeeSats > MAX_HIT_FEE_SATS) hitFeeSats = MAX_HIT_FEE_SATS;
+
+  const session = sessions.get(sessionId);
+  if (!session) return res.status(401).json({ error: "Your HandCash session expired. Please reconnect." });
+
+  const toHandle = (rawHandle || "").replace(/^\$/, "").trim();
+  if (!toHandle) return res.status(400).json({ error: "Enter the handle you want to challenge." });
+  if (toHandle.toLowerCase() === session.handle.toLowerCase()) {
+    return res.status(400).json({ error: "You can't challenge yourself." });
+  }
+
+  const room = createRoom(hitFeeSats);
+  const joinUrl = `${req.protocol}://${req.get("host")}/?room=${room.code}`;
+
+  try {
+    await handcash.paySats({
+      fromAuthToken: session.authToken,
+      toHandle,
+      amountSats: CHALLENGE_FEE_SATS,
+      description: `🏓 ${session.name} challenges you to Satoshi Pong! ${hitFeeSats} sats/hit. Join: ${joinUrl}`,
+    });
+    res.json({ code: room.code, hitFeeSats: room.hitFeeSats, joinUrl });
+  } catch (err) {
+    deleteRoom(room.code);
+    console.error(`Challenge to $${toHandle} failed:`, err.message);
+    res.status(400).json({ error: `Couldn't reach $${toHandle}: ${err.message}` });
+  }
 });
 
 app.get("/api/leaderboard", (req, res) => {
   res.json(getLeaderboard());
 });
 
-// ---------- Game loop ----------
 const activeLoops = new Map();
 
 function startLoop(room) {
@@ -93,19 +134,27 @@ async function handleHit(room, slot) {
   const player = room.playerBySlot(slot);
   if (!player) return;
 
+  const hitFee = room.hitFeeSats;
+  const devCut = DEV_HANDLE ? Math.floor(hitFee * (DEV_FEE_PERCENT / 100)) : 0;
+  const potCut = hitFee - devCut;
+
+  const receivers = [{ destination: HOUSE_HANDLE, amountSats: potCut }];
+  if (devCut > 0) receivers.push({ destination: DEV_HANDLE, amountSats: devCut });
+
   try {
-    const tx = await handcash.paySats({
+    const tx = await handcash.paySplit({
       fromAuthToken: player.authToken,
-      toHandle: HOUSE_HANDLE,
-      amountSats: HIT_FEE_SATS,
+      receivers,
       description: `Satoshi Pong hit #${room.rally + 1}`,
     });
-    room.pot += HIT_FEE_SATS;
+    room.pot += potCut;
     room.rally += 1;
     room.ledger.push({
       txid: tx.transactionId,
       from: player.name,
-      amountSats: HIT_FEE_SATS,
+      amountSats: hitFee,
+      potSats: potCut,
+      devSats: devCut,
       rally: room.rally,
     });
   } catch (err) {
@@ -160,7 +209,6 @@ async function handleMiss(room, missedSlot) {
   room.resetAfterPoint();
 }
 
-// ---------- Socket.IO ----------
 io.on("connection", (socket) => {
   socket.on("join_room", ({ sessionId, roomCode }) => {
     const session = sessions.get(sessionId);
