@@ -97,13 +97,18 @@
         <p>Waiting for opponent&hellip;</p>
       </div>
       <div id="start-overlay" class="overlay hidden">
-        <p>Press <kbd>SPACE</kbd> to serve</p>
+        <p>Press <kbd>SPACE</kbd> or tap here to serve</p>
         <p class="overlay-sub" id="controls-hint">W / S to move</p>
       </div>
       <div id="paused-overlay" class="overlay hidden">
         <p id="paused-text">Payment failed &mdash; point over</p>
       </div>
     </main>
+
+    <div class="touch-controls">
+      <button id="touch-up" class="touch-btn" aria-label="Move up">&#9650;</button>
+      <button id="touch-down" class="touch-btn" aria-label="Move down">&#9660;</button>
+    </div>
 
     <section class="ledger">
       <div class="ledger-header">
