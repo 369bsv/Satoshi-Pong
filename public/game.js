@@ -127,7 +127,7 @@ function joinRoom(roomCode) {
   ensureSocket().emit("join_room", { sessionId: currentSessionId, roomCode });
 }
 
-let selectedStake = 10;
+let selectedStake = 1000;
 stakePresets.querySelectorAll(".stake-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     selectedStake = parseInt(btn.dataset.stake, 10);
@@ -143,7 +143,7 @@ stakeCustom.addEventListener("input", () => {
     stakePresets.querySelectorAll(".stake-btn").forEach((b) => b.classList.remove("active"));
   }
 });
-stakePresets.querySelector('[data-stake="10"]').classList.add("active");
+stakePresets.querySelector('[data-stake="1000"]').classList.add("active");
 
 challengeBtn.addEventListener("click", async () => {
   const toHandle = challengeHandleInput.value.trim();
