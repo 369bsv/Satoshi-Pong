@@ -102,8 +102,18 @@ function ensureSocket() {
     renderHud(s);
     renderLedger(s.ledger);
     const full = s.players.length === 2;
+    const bothReady = s.readyForRematch?.p1 && s.readyForRematch?.p2;
     waitingOverlay.classList.toggle("hidden", full);
-    startOverlay.classList.toggle("hidden", !full || s.started);
+    startOverlay.classList.toggle("hidden", !full || s.started || !bothReady);
+
+    if (!gameoverModal.classList.contains("hidden") && mySlot) {
+      const iAmReady = s.readyForRematch?.[mySlot];
+      const opponentReady = s.readyForRematch?.[mySlot === "p1" ? "p2" : "p1"];
+      if (iAmReady && !opponentReady) {
+        rematchBtn.textContent = "WAITING FOR OPPONENT\u2026";
+        rematchBtn.disabled = true;
+      }
+    }
   });
 
   socket.on("payment_failed", ({ slot, message }) => {
@@ -122,7 +132,13 @@ function ensureSocket() {
     finalTxidEl.textContent = data.payoutTxid ? data.payoutTxid.slice(0, 20) + "\u2026" : "\u2014";
     payoutFailedNote.classList.toggle("hidden", !data.payoutFailed);
     renderLeaderboard(data.leaderboard);
+    rematchBtn.textContent = "REMATCH";
+    rematchBtn.disabled = false;
     gameoverModal.classList.remove("hidden");
+  });
+
+  socket.on("rematch_ready", () => {
+    gameoverModal.classList.add("hidden");
   });
 
   socket.on("opponent_left", () => {
@@ -227,7 +243,9 @@ joinRoomBtn.addEventListener("click", () => {
 joinCodeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoomBtn.click(); });
 
 rematchBtn.addEventListener("click", () => {
-  gameoverModal.classList.add("hidden");
+  socket.emit("ready_rematch");
+  rematchBtn.textContent = "WAITING FOR OPPONENT\u2026";
+  rematchBtn.disabled = true;
 });
 
 playAgainBtn.addEventListener("click", () => {
