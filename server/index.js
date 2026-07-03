@@ -1,112 +1,218 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SATOSHI PONG — LIVE</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css" />
-</head>
-<body>
+require("dotenv").config();
+const express = require("express");
+const http = require("http");
+const path = require("path");
+const { randomUUID } = require("crypto");
+const { Server } = require("socket.io");
 
-  <!-- Step 1: connect HandCash -->
-  <div id="connect-screen" class="screen">
-    <div class="card">
-      <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
-      <p class="tagline">Every hit is a real BSV payment. Miss, and your opponent takes the pot.</p>
-      <a id="connect-btn" class="btn" href="#">CONNECT HANDCASH</a>
-      <p id="connect-error" class="error-text"></p>
-      <div class="meta"><span id="fee-label">10 sats / hit</span><span class="dot">&middot;</span><span>real BSV via HandCash</span></div>
-    </div>
-  </div>
+const handcash = require("./handcash");
+const { createRoom, getRoom, deleteRoom, W, H } = require("./rooms");
+const { addLeaderboardEntry, getLeaderboard } = require("./store");
 
-  <!-- Step 2: lobby (create or join a room) -->
-  <div id="lobby-screen" class="screen hidden">
-    <div class="card">
-      <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
-      <p class="tagline" id="lobby-greeting">Connected.</p>
+const HIT_FEE_SATS = parseInt(process.env.HIT_FEE_SATS || "10", 10);
+const TICK_MS = 50; // 20Hz server tick
 
-      <div id="lobby-create">
-        <button id="create-room-btn" class="btn">CREATE ROOM</button>
-      </div>
+const HOUSE_HANDLE = process.env.HANDCASH_HOUSE_HANDLE;
+const HOUSE_AUTH_TOKEN = process.env.HANDCASH_HOUSE_AUTH_TOKEN;
 
-      <div id="lobby-share" class="hidden">
-        <p class="share-label">Send this link to your opponent:</p>
-        <div class="share-row">
-          <input id="share-link" type="text" readonly />
-          <button id="copy-link-btn" class="btn-small">COPY</button>
-        </div>
-        <p class="overlay-sub">Waiting for them to join&hellip;</p>
-      </div>
+if (!process.env.HANDCASH_APP_ID || !process.env.HANDCASH_APP_SECRET) {
+  console.warn("⚠️  HANDCASH_APP_ID / HANDCASH_APP_SECRET are not set. Auth will fail until you set them.");
+}
+if (!HOUSE_HANDLE || !HOUSE_AUTH_TOKEN) {
+  console.warn("⚠️  HANDCASH_HOUSE_HANDLE / HANDCASH_HOUSE_AUTH_TOKEN are not set. Payments will fail until you set them.");
+}
 
-      <div class="divider"><span>or</span></div>
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 
-      <div class="join-row">
-        <input id="join-code-input" type="text" placeholder="ROOM CODE" maxlength="6" autocomplete="off" />
-        <button id="join-room-btn" class="btn-small">JOIN</button>
-      </div>
-      <p id="lobby-error" class="error-text"></p>
-    </div>
-  </div>
+app.use(express.static(path.join(__dirname, "..", "public")));
+app.use(express.json());
 
-  <!-- Step 3: game -->
-  <div id="game-screen" class="screen hidden">
-    <header class="hud">
-      <div class="hud-player" id="hud-p1">
-        <span class="hud-label">P1</span>
-        <span class="hud-name" id="p1-name">&mdash;</span>
-      </div>
-      <div class="hud-center">
-        <div class="pot-display">
-          <span class="pot-label">POT</span>
-          <span class="pot-amount" id="pot-amount">0</span>
-          <span class="pot-unit">sats</span>
-        </div>
-        <div class="rally-display">RALLY <span id="rally-count">0</span></div>
-      </div>
-      <div class="hud-player hud-player--right" id="hud-p2">
-        <span class="hud-label">P2</span>
-        <span class="hud-name" id="p2-name">&mdash;</span>
-      </div>
-    </header>
+// ---------- HandCash OAuth ----------
+const sessions = new Map();
 
-    <main class="court-wrap">
-      <canvas id="court" width="900" height="480"></canvas>
-      <div id="waiting-overlay" class="overlay hidden">
-        <p>Waiting for opponent&hellip;</p>
-      </div>
-      <div id="start-overlay" class="overlay hidden">
-        <p>Press <kbd>SPACE</kbd> to serve</p>
-        <p class="overlay-sub" id="controls-hint">W / S to move</p>
-      </div>
-      <div id="paused-overlay" class="overlay hidden">
-        <p id="paused-text">Payment failed &mdash; point over</p>
-      </div>
-    </main>
+app.get("/auth/handcash/login", (req, res) => {
+  const state = req.query.room ? `room:${req.query.room}` : "";
+  const url = handcash.getAuthUrl(state);
+  res.redirect(url);
+});
 
-    <section class="ledger">
-      <div class="ledger-header">
-        <span class="ledger-title">LIVE TX LOG</span>
-        <span class="ledger-sub">real BSV payments via HandCash</span>
-      </div>
-      <div id="ledger-lines" class="ledger-lines"></div>
-    </section>
-  </div>
+app.get("/auth/handcash/callback", async (req, res) => {
+  const { authToken, state } = req.query;
+  if (!authToken) return res.redirect("/?auth_error=1");
+  try {
+    const profile = await handcash.getProfile(authToken);
+    const sessionId = randomUUID();
+    sessions.set(sessionId, {
+      authToken,
+      handle: profile.handle,
+      name: profile.displayName || profile.handle,
+    });
+    const room = state && state.startsWith("room:") ? state.slice(5) : "";
+    res.redirect(`/?session=${sessionId}${room ? `&room=${room}` : ""}`);
+  } catch (err) {
+    console.error("HandCash callback error:", err.message);
+    res.redirect("/?auth_error=1");
+  }
+});
 
-  <div id="gameover-modal" class="modal hidden">
-    <div class="modal-card">
-      <h2 id="winner-heading">WINNER</h2>
-      <p class="modal-row"><span>Rally length</span><span id="final-rally">0</span></p>
-      <p class="modal-row"><span>Pot won</span><span id="final-pot">0 sats</span></p>
-      <p class="modal-row modal-txid"><span>Payout tx</span><span id="final-txid">&mdash;</span></p>
-      <h3 class="board-heading">LONGEST RALLIES</h3>
-      <ol id="leaderboard-list" class="leaderboard-list"></ol>
-      <button id="play-again-btn" class="btn">BACK TO LOBBY</button>
-    </div>
-  </div>
+// ---------- Rooms ----------
+app.post("/api/rooms", (req, res) => {
+  const room = createRoom();
+  res.json({ code: room.code });
+});
 
-<script src="/socket.io/socket.io.js"></script>
-<script src="game.js"></script>
-</body>
-</html>
+app.get("/api/leaderboard", (req, res) => {
+  res.json(getLeaderboard());
+});
+
+// ---------- Game loop ----------
+const activeLoops = new Map();
+
+function startLoop(room) {
+  if (activeLoops.has(room.code)) return;
+  const interval = setInterval(() => tickRoom(room), TICK_MS);
+  activeLoops.set(room.code, interval);
+}
+
+function stopLoop(roomCode) {
+  const interval = activeLoops.get(roomCode);
+  if (interval) clearInterval(interval);
+  activeLoops.delete(roomCode);
+}
+
+function tickRoom(room) {
+  const event = room.step();
+  if (event?.type === "hit") handleHit(room, event.slot);
+  if (event?.type === "miss") handleMiss(room, event.slot);
+  io.to(room.code).emit("state", room.publicState());
+}
+
+async function handleHit(room, slot) {
+  const player = room.playerBySlot(slot);
+  if (!player) return;
+
+  try {
+    const tx = await handcash.paySats({
+      fromAuthToken: player.authToken,
+      toHandle: HOUSE_HANDLE,
+      amountSats: HIT_FEE_SATS,
+      description: `Satoshi Pong hit #${room.rally + 1}`,
+    });
+    room.pot += HIT_FEE_SATS;
+    room.rally += 1;
+    room.ledger.push({
+      txid: tx.transactionId,
+      from: player.name,
+      amountSats: HIT_FEE_SATS,
+      rally: room.rally,
+    });
+  } catch (err) {
+    console.warn(`Payment failed for ${player.name} in room ${room.code}:`, err.message);
+    io.to(room.code).emit("payment_failed", { slot, message: err.message });
+    handleMiss(room, slot);
+  }
+}
+
+async function handleMiss(room, missedSlot) {
+  if (!room.started && room.rally === 0 && room.pot === 0) return;
+  room.started = false;
+  const winner = room.playerBySlot(missedSlot === "p1" ? "p2" : "p1");
+  const loser = room.playerBySlot(missedSlot);
+  if (!winner) return;
+
+  let payoutTx = null;
+  const potAtEnd = room.pot;
+  if (potAtEnd > 0) {
+    try {
+      payoutTx = await handcash.paySats({
+        fromAuthToken: HOUSE_AUTH_TOKEN,
+        toHandle: winner.handle,
+        amountSats: potAtEnd,
+        description: `Satoshi Pong payout — beat ${loser ? loser.name : "opponent"}`,
+      });
+    } catch (err) {
+      console.error(`Payout failed in room ${room.code}:`, err.message);
+      io.to(room.code).emit("payout_failed", { message: err.message });
+    }
+  }
+
+  const entry = {
+    winner: winner.name,
+    rally: room.rally,
+    potSats: potAtEnd,
+    date: new Date().toISOString(),
+  };
+  const board = addLeaderboardEntry(entry);
+
+  io.to(room.code).emit("game_over", {
+    winner: winner.name,
+    rally: room.rally,
+    potSats: potAtEnd,
+    payoutTxid: payoutTx ? payoutTx.transactionId : null,
+    leaderboard: board,
+  });
+
+  room.pot = 0;
+  room.rally = 0;
+  room.ledger = [];
+  room.resetAfterPoint();
+}
+
+// ---------- Socket.IO ----------
+io.on("connection", (socket) => {
+  socket.on("join_room", ({ sessionId, roomCode }) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      socket.emit("join_error", { message: "Your HandCash session expired. Please reconnect your wallet." });
+      return;
+    }
+    const room = getRoom(roomCode);
+    if (!room) {
+      socket.emit("join_error", { message: "That room code doesn't exist." });
+      return;
+    }
+    const slot = room.addPlayer(socket.id, session);
+    if (!slot) {
+      socket.emit("join_error", { message: "That room is already full." });
+      return;
+    }
+    socket.data.roomCode = roomCode;
+    socket.join(roomCode);
+    socket.emit("joined", { slot, roomCode, name: session.name, handle: session.handle });
+    io.to(roomCode).emit("state", room.publicState());
+    if (room.isFull()) startLoop(room);
+  });
+
+  socket.on("input", ({ up, down }) => {
+    const roomCode = socket.data.roomCode;
+    const room = getRoom(roomCode);
+    if (!room) return;
+    const player = room.players[socket.id];
+    if (!player) return;
+    room.input[player.slot] = { up: !!up, down: !!down };
+  });
+
+  socket.on("serve", () => {
+    const room = getRoom(socket.data.roomCode);
+    if (room && room.isFull() && !room.started) room.serve();
+  });
+
+  socket.on("disconnect", () => {
+    const roomCode = socket.data.roomCode;
+    const room = getRoom(roomCode);
+    if (!room) return;
+    room.removePlayer(socket.id);
+    io.to(roomCode).emit("opponent_left");
+    if (Object.keys(room.players).length === 0) {
+      stopLoop(roomCode);
+      deleteRoom(roomCode);
+    }
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Satoshi Pong (live) running on port ${PORT}`);
+});
