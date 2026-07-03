@@ -154,8 +154,9 @@ function ensureSocket() {
   });
 
   socket.on("opponent_left", () => {
-    pausedText.textContent = "Opponent disconnected.";
+    pausedText.textContent = "Opponent left the game. Returning to lobby\u2026";
     pausedOverlay.classList.remove("hidden");
+    setTimeout(() => { location.href = `/?session=${currentSessionId}`; }, 1800);
   });
 
   return socket;
