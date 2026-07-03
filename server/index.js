@@ -280,7 +280,9 @@ io.on("connection", (socket) => {
 
   socket.on("serve", () => {
     const room = getRoom(socket.data.roomCode);
-    if (room && room.isFull() && !room.started && room.bothReadyForRematch()) room.serve();
+    if (!room) return;
+    const player = room.players[socket.id];
+    if (player && room.isFull() && !room.started && room.bothReadyForRematch()) room.serve(player.slot);
   });
 
   socket.on("ready_rematch", () => {
