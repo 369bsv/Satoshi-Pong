@@ -29,6 +29,7 @@ class Room {
     this.rally = 0;
     this.ledger = [];
     this.paymentLock = { p1: false, p2: false };
+    this.readyForRematch = { p1: true, p2: true };
   }
 
   addPlayer(socketId, { handle, authToken, name }) {
@@ -51,6 +52,14 @@ class Room {
     return Object.values(this.players).find((p) => p.slot === slot);
   }
 
+  setReadyForRematch(slot) {
+    this.readyForRematch[slot] = true;
+  }
+
+  bothReadyForRematch() {
+    return this.readyForRematch.p1 && this.readyForRematch.p2;
+  }
+
   serve() {
     this.ball = freshBall();
     this.started = true;
@@ -59,6 +68,7 @@ class Room {
   resetAfterPoint() {
     this.started = false;
     this.ball = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
+    this.readyForRematch = { p1: false, p2: false };
   }
 
   step() {
@@ -109,6 +119,7 @@ class Room {
       pot: this.pot,
       rally: this.rally,
       hitFeeSats: this.hitFeeSats,
+      readyForRematch: this.readyForRematch,
       ledger: this.ledger.slice(-8),
       players: Object.values(this.players).map((p) => ({ slot: p.slot, name: p.name, handle: p.handle })),
     };
