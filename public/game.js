@@ -56,10 +56,17 @@ let mySlot = null;
 let currentSessionId = null;
 let latestState = null;
 
+const SESSION_STORAGE_KEY = "satoshiPongSessionId";
+
 (function boot() {
-  const session = qs("session");
+  const sessionFromUrl = qs("session");
   const roomFromUrl = qs("room");
   const authError = qs("auth_error");
+
+  if (sessionFromUrl) {
+    localStorage.setItem(SESSION_STORAGE_KEY, sessionFromUrl);
+  }
+  const session = sessionFromUrl || localStorage.getItem(SESSION_STORAGE_KEY);
 
   connectBtn.href = "/auth/handcash/login" + (roomFromUrl ? `?room=${roomFromUrl}` : "");
   if (authError) connectError.textContent = "Couldn't connect HandCash. Please try again.";
@@ -95,6 +102,11 @@ function ensureSocket() {
 
   socket.on("join_error", ({ message }) => {
     lobbyError.textContent = message;
+    if (message.includes("expired")) {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+      lobbyError.textContent = message + " Reconnecting\u2026";
+      setTimeout(() => { location.href = "/auth/handcash/login" + (qs("room") ? `?room=${qs("room")}` : ""); }, 1500);
+    }
   });
 
   socket.on("state", (s) => {
@@ -347,4 +359,4 @@ function draw() {
   ctx.fillStyle = "#f4b93e";
   ctx.fill();
 }
-draw();
+draw();#
