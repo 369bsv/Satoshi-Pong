@@ -31,6 +31,8 @@ const rallyCountEl = document.getElementById("rally-count");
 const ledgerLinesEl = document.getElementById("ledger-lines");
 const waitingOverlay = document.getElementById("waiting-overlay");
 const startOverlay = document.getElementById("start-overlay");
+const touchUpBtn = document.getElementById("touch-up");
+const touchDownBtn = document.getElementById("touch-down");
 const controlsHint = document.getElementById("controls-hint");
 const pausedOverlay = document.getElementById("paused-overlay");
 const pausedText = document.getElementById("paused-text");
@@ -86,7 +88,7 @@ function ensureSocket() {
     mySlot = data.slot;
     lobbyScreen.classList.add("hidden");
     gameScreen.classList.remove("hidden");
-    controlsHint.textContent = mySlot === "p1" ? "You control: W / S" : "You control: \u2191 / \u2193";
+    controlsHint.textContent = mySlot === "p1" ? "W / S or the buttons below to move" : "\u2191 / \u2193 or the buttons below to move";
   });
 
   socket.on("join_error", ({ message }) => {
@@ -223,28 +225,47 @@ playAgainBtn.addEventListener("click", () => {
 });
 
 const keys = { up: false, down: false };
+
+function setKey(dir, value) {
+  keys[dir] = value;
+  if (mySlot) socket.emit("input", keys);
+}
+
+function tryServe() {
+  if (mySlot && latestState && latestState.players.length === 2 && !latestState.started) {
+    socket.emit("serve");
+  }
+}
+startOverlay.addEventListener("click", tryServe);
+
+touchUpBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("up", true); });
+touchUpBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("up", false); });
+touchUpBtn.addEventListener("pointerleave", () => setKey("up", false));
+touchUpBtn.addEventListener("pointercancel", () => setKey("up", false));
+
+touchDownBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("down", true); });
+touchDownBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("down", false); });
+touchDownBtn.addEventListener("pointerleave", () => setKey("down", false));
+touchDownBtn.addEventListener("pointercancel", () => setKey("down", false));
+
 window.addEventListener("keydown", (e) => {
   if (!mySlot) return;
   if (e.code === "Space") {
     e.preventDefault();
-    if (latestState && latestState.players.length === 2 && !latestState.started) {
-      socket.emit("serve");
-    }
+    tryServe();
   }
   const isMoveKey =
     (mySlot === "p1" && (e.code === "KeyW" || e.code === "KeyS")) ||
     (mySlot === "p2" && (e.code === "ArrowUp" || e.code === "ArrowDown"));
   if (!isMoveKey) return;
   e.preventDefault();
-  if (e.code === "KeyW" || e.code === "ArrowUp") keys.up = true;
-  if (e.code === "KeyS" || e.code === "ArrowDown") keys.down = true;
-  socket.emit("input", keys);
+  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", true);
+  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", true);
 });
 window.addEventListener("keyup", (e) => {
   if (!mySlot) return;
-  if (e.code === "KeyW" || e.code === "ArrowUp") keys.up = false;
-  if (e.code === "KeyS" || e.code === "ArrowDown") keys.down = false;
-  socket.emit("input", keys);
+  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", false);
+  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", false);
 });
 
 function renderHud(s) {
