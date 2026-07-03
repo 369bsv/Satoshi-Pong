@@ -79,9 +79,12 @@ const MIN_HIT_FEE_SATS = SATS_GRANULARITY;
 function roundToGranularity(sats) {
   return Math.max(SATS_GRANULARITY, Math.round(sats / SATS_GRANULARITY) * SATS_GRANULARITY);
 }
-function roundDevCut(hitFeeSats, devFeePercent) {
-  const raw = hitFeeSats * (devFeePercent / 100);
-  return Math.round(raw / SATS_GRANULARITY) * SATS_GRANULARITY;
+function roundDevCut(potAtEnd, devFeePercent) {
+  if (potAtEnd < SATS_GRANULARITY * 2) return 0;
+  const raw = potAtEnd * (devFeePercent / 100);
+  const cut = Math.ceil(raw / SATS_GRANULARITY) * SATS_GRANULARITY;
+  const maxCut = potAtEnd - SATS_GRANULARITY;
+  return Math.min(cut, maxCut);
 }
 const CHALLENGE_FEE_SATS = roundToGranularity(parseInt(process.env.CHALLENGE_FEE_SATS || String(SATS_GRANULARITY), 10));
 const MAX_HIT_FEE_SATS = 1000000;
@@ -298,10 +301,8 @@ io.on("connection", (socket) => {
     if (!room) return;
     room.removePlayer(socket.id);
     io.to(roomCode).emit("opponent_left");
-    if (Object.keys(room.players).length === 0) {
-      stopLoop(roomCode);
-      deleteRoom(roomCode);
-    }
+    stopLoop(roomCode);
+    deleteRoom(roomCode);
   });
 });
 
