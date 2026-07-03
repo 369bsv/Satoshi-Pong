@@ -57,23 +57,28 @@ let currentSessionId = null;
 let latestState = null;
 
 const SESSION_STORAGE_KEY = "satoshiPongSessionId";
+const PENDING_ROOM_KEY = "satoshiPongPendingRoom";
 
 (function boot() {
   const sessionFromUrl = qs("session");
-  const roomFromUrl = qs("room");
   const authError = qs("auth_error");
+
+  const roomFromUrl = qs("room");
+  if (roomFromUrl) localStorage.setItem(PENDING_ROOM_KEY, roomFromUrl);
+  const pendingRoom = roomFromUrl || localStorage.getItem(PENDING_ROOM_KEY);
 
   if (sessionFromUrl) {
     localStorage.setItem(SESSION_STORAGE_KEY, sessionFromUrl);
   }
   const session = sessionFromUrl || localStorage.getItem(SESSION_STORAGE_KEY);
 
-  connectBtn.href = "/auth/handcash/login" + (roomFromUrl ? `?room=${roomFromUrl}` : "");
+  connectBtn.href = "/auth/handcash/login" + (pendingRoom ? `?room=${pendingRoom}` : "");
   if (authError) connectError.textContent = "Couldn't connect HandCash. Please try again.";
 
   if (session) {
     currentSessionId = session;
-    showLobby(roomFromUrl);
+    localStorage.removeItem(PENDING_ROOM_KEY);
+    showLobby(pendingRoom);
   }
 })();
 
