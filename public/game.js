@@ -227,6 +227,9 @@ challengeBtn.addEventListener("click", async () => {
     lobbyShare.classList.remove("hidden");
     lobbyCreate.classList.add("hidden");
     joinRoom(data.code);
+  } catch (err) {
+    console.error("Challenge request failed:", err);
+    lobbyError.textContent = "Something went wrong sending that challenge: " + err.message;
   } finally {
     challengeBtn.disabled = false;
     challengeBtn.textContent = "CHALLENGE";
