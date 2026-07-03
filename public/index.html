@@ -7,10 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css" />
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 <body>
 
-  <!-- Step 1: connect HandCash -->
   <div id="connect-screen" class="screen">
     <div class="card">
       <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
@@ -21,7 +21,6 @@
     </div>
   </div>
 
-  <!-- Step 2: lobby (create or join a room) -->
   <div id="lobby-screen" class="screen hidden">
     <div class="card">
       <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
@@ -42,7 +41,7 @@
           <input id="challenge-handle-input" type="text" placeholder="$theirhandle" autocomplete="off" />
           <button id="challenge-btn" class="btn-small">CHALLENGE</button>
         </div>
-       <p class="overlay-sub">Sends them a 1,000 sat payment with the room code in the note (HandCash notes are short, so it's just the code, not a full link).</p> 
+        <p class="overlay-sub">Sends them a 1,000 sat payment with the join link in the note.</p>
 
         <div class="divider"><span>or</span></div>
 
@@ -50,12 +49,15 @@
       </div>
 
       <div id="lobby-share" class="hidden">
-        <p class="share-label">Send this link to your opponent:</p>
+        <p class="share-label" id="lobby-share-label">Send this link to your opponent:</p>
         <div class="share-row">
           <input id="share-link" type="text" readonly />
           <button id="copy-link-btn" class="btn-small">COPY</button>
         </div>
-        <p class="overlay-sub">Waiting for them to join&hellip;</p>
+        <div class="qr-wrap">
+          <canvas id="invite-qr"></canvas>
+        </div>
+        <p class="overlay-sub" id="lobby-share-sub">Waiting for them to join&hellip;</p>
       </div>
 
       <div class="divider"><span>or</span></div>
@@ -68,7 +70,6 @@
     </div>
   </div>
 
-  <!-- Step 3: game -->
   <div id="game-screen" class="screen hidden">
     <header class="hud">
       <div class="hud-player" id="hud-p1">
