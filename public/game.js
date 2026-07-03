@@ -13,13 +13,15 @@ const lobbyCreate = document.getElementById("lobby-create");
 const lobbyShare = document.getElementById("lobby-share");
 const createRoomBtn = document.getElementById("create-room-btn");
 const shareLink = document.getElementById("share-link");
+const inviteQrCanvas = document.getElementById("invite-qr");
 const copyLinkBtn = document.getElementById("copy-link-btn");
 const joinCodeInput = document.getElementById("join-code-input");
 const joinRoomBtn = document.getElementById("join-room-btn");
 const lobbyError = document.getElementById("lobby-error");
 const challengeHandleInput = document.getElementById("challenge-handle-input");
 const challengeBtn = document.getElementById("challenge-btn");
-const lobbyShareLabel = document.querySelector("#lobby-share .share-label");
+const lobbyShareLabel = document.getElementById("lobby-share-label");
+const lobbyShareSub = document.getElementById("lobby-share-sub");
 
 const gameScreen = document.getElementById("game-screen");
 const p1NameEl = document.getElementById("p1-name");
@@ -127,6 +129,14 @@ function joinRoom(roomCode) {
   ensureSocket().emit("join_room", { sessionId: currentSessionId, roomCode });
 }
 
+function renderInviteQr(url) {
+  if (window.QRCode) {
+    QRCode.toCanvas(inviteQrCanvas, url, { width: 180, margin: 1 }, (err) => {
+      if (err) console.error("QR render failed:", err);
+    });
+  }
+}
+
 let selectedStake = 1000;
 stakePresets.querySelectorAll(".stake-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -165,8 +175,10 @@ challengeBtn.addEventListener("click", async () => {
       lobbyError.textContent = data.error || "Couldn't send that challenge.";
       return;
     }
-    lobbyShareLabel.textContent = `Challenge sent to $${toHandle}!`;
+    lobbyShareLabel.textContent = `Challenge sent to $${toHandle}! Now send them this link too:`;
+    lobbyShareSub.textContent = `The payment note only carries the room code (HandCash notes are short) -- text them the link, or have them scan the QR code.`;
     shareLink.value = data.joinUrl;
+    renderInviteQr(data.joinUrl);
     lobbyShare.classList.remove("hidden");
     lobbyCreate.classList.add("hidden");
     joinRoom(data.code);
@@ -185,7 +197,9 @@ createRoomBtn.addEventListener("click", async () => {
   });
   const { code } = await res.json();
   lobbyShareLabel.textContent = "Send this link to your opponent:";
-  shareLink.value = `${location.origin}/?room=${code}`;
+  lobbyShareSub.textContent = "Waiting for them to join\u2026";
+  shareLink.value = `${location.origin}/${code}`;
+  renderInviteQr(shareLink.value);
   lobbyShare.classList.remove("hidden");
   lobbyCreate.classList.add("hidden");
   joinRoom(code);
