@@ -10,9 +10,17 @@ function makeRoomCode() {
   return code;
 }
 
-function freshBall() {
-  const dir = Math.random() > 0.5 ? 1 : -1;
-  return { x: W / 2, y: H / 2, vx: 5 * dir, vy: Math.random() * 4 - 2 };
+function freshBall(slot, paddles) {
+  if (!slot || !paddles) {
+    const dir = Math.random() > 0.5 ? 1 : -1;
+    return { x: W / 2, y: H / 2, vx: 5 * dir, vy: Math.random() * 4 - 2 };
+  }
+  const dir = slot === "p1" ? 1 : -1;
+  const startX = slot === "p1"
+    ? PADDLE_W + 10 + BALL_R + 4
+    : W - PADDLE_W - 10 - BALL_R - 4;
+  const startY = paddles[slot] + PADDLE_H / 2;
+  return { x: startX, y: startY, vx: 5 * dir, vy: Math.random() * 4 - 2 };
 }
 
 class Room {
@@ -60,8 +68,8 @@ class Room {
     return this.readyForRematch.p1 && this.readyForRematch.p2;
   }
 
-  serve() {
-    this.ball = freshBall();
+  serve(slot) {
+    this.ball = freshBall(slot, this.paddles);
     this.started = true;
   }
 
