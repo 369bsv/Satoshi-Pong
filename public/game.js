@@ -42,7 +42,9 @@ const winnerHeading = document.getElementById("winner-heading");
 const finalRallyEl = document.getElementById("final-rally");
 const finalPotEl = document.getElementById("final-pot");
 const finalTxidEl = document.getElementById("final-txid");
+const payoutFailedNote = document.getElementById("payout-failed-note");
 const leaderboardListEl = document.getElementById("leaderboard-list");
+const rematchBtn = document.getElementById("rematch-btn");
 const playAgainBtn = document.getElementById("play-again-btn");
 
 const canvas = document.getElementById("court");
@@ -113,8 +115,12 @@ function ensureSocket() {
   socket.on("game_over", (data) => {
     winnerHeading.textContent = `${data.winner} WINS`;
     finalRallyEl.textContent = data.rally;
-    finalPotEl.textContent = `${data.potSats.toLocaleString()} sats`;
+    const potLabel = data.devCut > 0
+      ? `${data.potSats.toLocaleString()} sats (${data.winnerAmount.toLocaleString()} to winner, ${data.devCut.toLocaleString()} fee)`
+      : `${data.potSats.toLocaleString()} sats`;
+    finalPotEl.textContent = potLabel;
     finalTxidEl.textContent = data.payoutTxid ? data.payoutTxid.slice(0, 20) + "\u2026" : "\u2014";
+    payoutFailedNote.classList.toggle("hidden", !data.payoutFailed);
     renderLeaderboard(data.leaderboard);
     gameoverModal.classList.remove("hidden");
   });
@@ -219,6 +225,10 @@ joinRoomBtn.addEventListener("click", () => {
   joinRoom(code);
 });
 joinCodeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoomBtn.click(); });
+
+rematchBtn.addEventListener("click", () => {
+  gameoverModal.classList.add("hidden");
+});
 
 playAgainBtn.addEventListener("click", () => {
   location.href = `/?session=${currentSessionId}`;
