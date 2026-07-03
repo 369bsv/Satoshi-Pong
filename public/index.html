@@ -17,7 +17,7 @@
       <p class="tagline">Every hit is a real BSV payment. Miss, and your opponent takes the pot.</p>
       <a id="connect-btn" class="btn" href="#">CONNECT HANDCASH</a>
       <p id="connect-error" class="error-text"></p>
-      <div class="meta"><span id="fee-label">10 sats / hit</span><span class="dot">&middot;</span><span>real BSV via HandCash</span></div>
+      <div class="meta"><span>choose your stake per hit</span><span class="dot">&middot;</span><span>real BSV via HandCash</span></div>
     </div>
   </div>
 
@@ -28,7 +28,25 @@
       <p class="tagline" id="lobby-greeting">Connected.</p>
 
       <div id="lobby-create">
-        <button id="create-room-btn" class="btn">CREATE ROOM</button>
+        <p class="share-label" style="margin-top:0;">Sats per hit:</p>
+        <div class="stake-row" id="stake-presets">
+          <button class="stake-btn" data-stake="1">1</button>
+          <button class="stake-btn" data-stake="10">10</button>
+          <button class="stake-btn" data-stake="100">100</button>
+          <button class="stake-btn" data-stake="1000">1000</button>
+        </div>
+        <input id="stake-custom" type="number" min="1" placeholder="or type a custom amount" />
+
+        <p class="share-label">Challenge a HandCash handle:</p>
+        <div class="share-row">
+          <input id="challenge-handle-input" type="text" placeholder="$theirhandle" autocomplete="off" />
+          <button id="challenge-btn" class="btn-small">CHALLENGE</button>
+        </div>
+        <p class="overlay-sub">Sends them a 1 sat payment with the game invite attached.</p>
+
+        <div class="divider"><span>or</span></div>
+
+        <button id="create-room-btn" class="btn">CREATE ROOM &amp; SHARE LINK</button>
       </div>
 
       <div id="lobby-share" class="hidden">
@@ -64,6 +82,7 @@
           <span class="pot-unit">sats</span>
         </div>
         <div class="rally-display">RALLY <span id="rally-count">0</span></div>
+        <div class="stake-display"><span id="stake-label">0</span> sats / hit</div>
       </div>
       <div class="hud-player hud-player--right" id="hud-p2">
         <span class="hud-label">P2</span>
