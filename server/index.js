@@ -46,7 +46,6 @@ app.get("/auth/handcash/callback", async (req, res) => {
   if (!authToken) return res.redirect("/?auth_error=1");
   try {
     const profile = await handcash.getProfile(authToken);
-    // TEMPORARY DEBUG LINE -- remove once handle/name extraction is confirmed correct.
     console.log("=== HandCash profile response ===", JSON.stringify(profile));
 
     const handle =
@@ -74,14 +73,31 @@ app.get("/auth/handcash/callback", async (req, res) => {
   }
 });
 
-const MIN_HIT_FEE_SATS = 1;
+// ---------- Rooms ----------
+// HandCash's payment API caps amounts at 5 decimal places when denominated
+// in BTC/BSV -- that works out to a hard floor of 1000 satoshis (0.00001 BSV)
+// per payment. True single-satoshi payments aren't possible through this API,
+// so every amount here (hit fee, dev cut, challenge fee) must be a multiple
+// of 1000 sats or HandCash will reject it.
+const SATS_GRANULARITY = 1000;
+const MIN_HIT_FEE_SATS = SATS_GRANULARITY;
+function roundToGranularity(sats) {
+  return Math.max(SATS_GRANULARITY, Math.round(sats / SATS_GRANULARITY) * SATS_GRANULARITY);
+}
+// Dev cut must ALSO be a multiple of 1000 sats (it's paid as a separate
+// receiver in the same transaction as the pot's share), and can legitimately
+// be 0 at low stakes -- that's fine, HandCash just omits that receiver then.
+function roundDevCut(hitFeeSats, devFeePercent) {
+  const raw = hitFeeSats * (devFeePercent / 100);
+  return Math.round(raw / SATS_GRANULARITY) * SATS_GRANULARITY;
+}
+const CHALLENGE_FEE_SATS = roundToGranularity(parseInt(process.env.CHALLENGE_FEE_SATS || String(SATS_GRANULARITY), 10));
 const MAX_HIT_FEE_SATS = 1000000;
-const CHALLENGE_FEE_SATS = parseInt(process.env.CHALLENGE_FEE_SATS || "1", 10);
 
 app.post("/api/rooms", (req, res) => {
   let hitFeeSats = parseInt(req.body?.hitFeeSats, 10);
   if (!Number.isFinite(hitFeeSats) || hitFeeSats < MIN_HIT_FEE_SATS) hitFeeSats = MIN_HIT_FEE_SATS;
-  if (hitFeeSats > MAX_HIT_FEE_SATS) hitFeeSats = MAX_HIT_FEE_SATS;
+  hitFeeSats = roundToGranularity(Math.min(hitFeeSats, MAX_HIT_FEE_SATS));
   const room = createRoom(hitFeeSats);
   res.json({ code: room.code, hitFeeSats: room.hitFeeSats });
 });
@@ -90,7 +106,7 @@ app.post("/api/challenge", async (req, res) => {
   const { sessionId, toHandle: rawHandle } = req.body || {};
   let hitFeeSats = parseInt(req.body?.hitFeeSats, 10);
   if (!Number.isFinite(hitFeeSats) || hitFeeSats < MIN_HIT_FEE_SATS) hitFeeSats = MIN_HIT_FEE_SATS;
-  if (hitFeeSats > MAX_HIT_FEE_SATS) hitFeeSats = MAX_HIT_FEE_SATS;
+  hitFeeSats = roundToGranularity(Math.min(hitFeeSats, MAX_HIT_FEE_SATS));
 
   const session = sessions.get(sessionId);
   if (!session) return res.status(401).json({ error: "Your HandCash session expired. Please reconnect." });
@@ -109,7 +125,7 @@ app.post("/api/challenge", async (req, res) => {
       fromAuthToken: session.authToken,
       toHandle,
       amountSats: CHALLENGE_FEE_SATS,
-      description:`SatoshiPong ${room.code}`,
+      description: `SatoshiPong ${room.code}`,
     });
     res.json({ code: room.code, hitFeeSats: room.hitFeeSats, joinUrl });
   } catch (err) {
@@ -149,7 +165,7 @@ async function handleHit(room, slot) {
   if (!player) return;
 
   const hitFee = room.hitFeeSats;
-  const devCut = DEV_HANDLE ? Math.floor(hitFee * (DEV_FEE_PERCENT / 100)) : 0;
+  const devCut = DEV_HANDLE ? roundDevCut(hitFee, DEV_FEE_PERCENT) : 0;
   const potCut = hitFee - devCut;
 
   const receivers = [{ destination: HOUSE_HANDLE, amountSats: potCut }];
@@ -159,7 +175,7 @@ async function handleHit(room, slot) {
     const tx = await handcash.paySplit({
       fromAuthToken: player.authToken,
       receivers,
-      description:`Pong hit ${room.rally + 1}`,
+      description: `Pong hit ${room.rally + 1}`,
     });
     room.pot += potCut;
     room.rally += 1;
