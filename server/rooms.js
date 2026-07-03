@@ -4,7 +4,7 @@ const W = 900, H = 480;
 const PADDLE_W = 12, PADDLE_H = 90, PADDLE_SPEED = 7, BALL_R = 8;
 
 function makeRoomCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
   for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
@@ -12,17 +12,15 @@ function makeRoomCode() {
 
 function freshBall() {
   const dir = Math.random() > 0.5 ? 1 : -1;
-  return {
-    x: W / 2, y: H / 2,
-    vx: 5 * dir, vy: Math.random() * 4 - 2,
-  };
+  return { x: W / 2, y: H / 2, vx: 5 * dir, vy: Math.random() * 4 - 2 };
 }
 
 class Room {
-  constructor(code) {
+  constructor(code, hitFeeSats) {
     this.code = code;
     this.id = randomUUID();
-    this.players = {}; // socketId -> { slot, handle, authToken, name }
+    this.hitFeeSats = hitFeeSats;
+    this.players = {};
     this.paddles = { p1: H / 2 - PADDLE_H / 2, p2: H / 2 - PADDLE_H / 2 };
     this.input = { p1: { up: false, down: false }, p2: { up: false, down: false } };
     this.ball = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
@@ -30,7 +28,7 @@ class Room {
     this.pot = 0;
     this.rally = 0;
     this.ledger = [];
-    this.paymentLock = { p1: false, p2: false }; // avoid overlapping payments per player
+    this.paymentLock = { p1: false, p2: false };
   }
 
   addPlayer(socketId, { handle, authToken, name }) {
@@ -63,7 +61,6 @@ class Room {
     this.ball = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
   }
 
-  /** Advance physics by one tick. Returns a 'hit' or 'miss' event, or null. */
   step() {
     if (this.input.p1.up) this.paddles.p1 -= PADDLE_SPEED;
     if (this.input.p1.down) this.paddles.p1 += PADDLE_SPEED;
@@ -111,6 +108,7 @@ class Room {
       started: this.started,
       pot: this.pot,
       rally: this.rally,
+      hitFeeSats: this.hitFeeSats,
       ledger: this.ledger.slice(-8),
       players: Object.values(this.players).map((p) => ({ slot: p.slot, name: p.name, handle: p.handle })),
     };
@@ -119,12 +117,12 @@ class Room {
 
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
-const rooms = new Map(); // code -> Room
+const rooms = new Map();
 
-function createRoom() {
+function createRoom(hitFeeSats) {
   let code;
   do { code = makeRoomCode(); } while (rooms.has(code));
-  const room = new Room(code);
+  const room = new Room(code, hitFeeSats);
   rooms.set(code, room);
   return room;
 }
