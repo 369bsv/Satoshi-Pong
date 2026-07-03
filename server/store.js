@@ -15,9 +15,6 @@ function saveLeaderboard(list) {
   try {
     fs.writeFileSync(LEADERBOARD_PATH, JSON.stringify(list, null, 2));
   } catch (err) {
-    // On some free hosts the filesystem is read-only or ephemeral --
-    // leaderboard just won't persist across restarts there. Swap this
-    // module for a real database (Postgres, Redis, etc.) for production.
     console.warn("Could not persist leaderboard:", err.message);
   }
 }
