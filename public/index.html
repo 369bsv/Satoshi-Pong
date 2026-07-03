@@ -11,6 +11,7 @@
 </head>
 <body>
 
+  <!-- Step 1: connect HandCash -->
   <div id="connect-screen" class="screen">
     <div class="card">
       <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
@@ -21,6 +22,7 @@
     </div>
   </div>
 
+  <!-- Step 2: lobby (create or join a room) -->
   <div id="lobby-screen" class="screen hidden">
     <div class="card">
       <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
@@ -41,7 +43,7 @@
           <input id="challenge-handle-input" type="text" placeholder="$theirhandle" autocomplete="off" />
           <button id="challenge-btn" class="btn-small">CHALLENGE</button>
         </div>
-        <p class="overlay-sub">Sends them a 1,000 sat payment with the join link in the note.</p>
+        <p class="overlay-sub">Sends them a 1,000 sat payment with the room code in the note (HandCash notes are short, so it's just the code, not a full link).</p>
 
         <div class="divider"><span>or</span></div>
 
@@ -70,6 +72,7 @@
     </div>
   </div>
 
+  <!-- Step 3: game -->
   <div id="game-screen" class="screen hidden">
     <header class="hud">
       <div class="hud-player" id="hud-p1">
@@ -125,9 +128,11 @@
       <p class="modal-row"><span>Rally length</span><span id="final-rally">0</span></p>
       <p class="modal-row"><span>Pot won</span><span id="final-pot">0 sats</span></p>
       <p class="modal-row modal-txid"><span>Payout tx</span><span id="final-txid">&mdash;</span></p>
+      <p id="payout-failed-note" class="error-text hidden">Payout didn't go through -- the pot is stuck in the house wallet. Contact the app owner.</p>
       <h3 class="board-heading">LONGEST RALLIES</h3>
       <ol id="leaderboard-list" class="leaderboard-list"></ol>
-      <button id="play-again-btn" class="btn">BACK TO LOBBY</button>
+      <button id="rematch-btn" class="btn">REMATCH</button>
+      <button id="play-again-btn" class="btn-small" style="width:100%; margin-top:10px; background:transparent; border:1px solid var(--line); color:var(--text-dim);">LEAVE TO LOBBY</button>
     </div>
   </div>
 
