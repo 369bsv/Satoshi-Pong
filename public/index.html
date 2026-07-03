@@ -11,7 +11,6 @@
 </head>
 <body>
 
-  <!-- Step 1: connect HandCash -->
   <div id="connect-screen" class="screen">
     <div class="card">
       <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
@@ -22,7 +21,6 @@
     </div>
   </div>
 
-  <!-- Step 2: lobby (create or join a room) -->
   <div id="lobby-screen" class="screen hidden">
     <div class="card">
       <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
@@ -72,7 +70,6 @@
     </div>
   </div>
 
-  <!-- Step 3: game -->
   <div id="game-screen" class="screen hidden">
     <header class="hud">
       <div class="hud-player" id="hud-p1">
@@ -103,6 +100,7 @@
         <p>Press <kbd>SPACE</kbd> or tap here to serve</p>
         <p class="overlay-sub" id="controls-hint">W / S to move</p>
       </div>
+      <div id="serve-hint" class="serve-hint hidden"></div>
       <div id="paused-overlay" class="overlay hidden">
         <p id="paused-text">Payment failed &mdash; point over</p>
       </div>
