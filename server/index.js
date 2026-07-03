@@ -109,7 +109,7 @@ app.post("/api/challenge", async (req, res) => {
       fromAuthToken: session.authToken,
       toHandle,
       amountSats: CHALLENGE_FEE_SATS,
-      description: `🏓 ${session.name} challenges you to Satoshi Pong! ${hitFeeSats} sats/hit. Join: ${joinUrl}`,
+      description:`SatoshiPong ${room.code}`,
     });
     res.json({ code: room.code, hitFeeSats: room.hitFeeSats, joinUrl });
   } catch (err) {
@@ -159,7 +159,7 @@ async function handleHit(room, slot) {
     const tx = await handcash.paySplit({
       fromAuthToken: player.authToken,
       receivers,
-      description: `Satoshi Pong hit #${room.rally + 1}`,
+      description:`Pong hit ${room.rally + 1}`,
     });
     room.pot += potCut;
     room.rally += 1;
@@ -193,7 +193,7 @@ async function handleMiss(room, missedSlot) {
         fromAuthToken: HOUSE_AUTH_TOKEN,
         toHandle: winner.handle,
         amountSats: potAtEnd,
-        description: `Satoshi Pong payout — beat ${loser ? loser.name : "opponent"}`,
+        description: `Pong payout`,
       });
     } catch (err) {
       console.error(`Payout failed in room ${room.code}:`, err.message);
