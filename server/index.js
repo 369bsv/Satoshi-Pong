@@ -44,6 +44,7 @@ app.get("/auth/handcash/login", (req, res) => {
 app.get("/auth/handcash/callback", async (req, res) => {
   const { authToken, state } = req.query;
   if (!authToken) return res.redirect("/?auth_error=1");
+  console.log("=== HandCash authToken (copy this for HANDCASH_HOUSE_AUTH_TOKEN) ===", authToken);
   try {
     const profile = await handcash.getProfile(authToken);
     const sessionId = randomUUID();
