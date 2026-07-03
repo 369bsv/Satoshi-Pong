@@ -277,7 +277,19 @@ io.on("connection", (socket) => {
 
   socket.on("serve", () => {
     const room = getRoom(socket.data.roomCode);
-    if (room && room.isFull() && !room.started) room.serve();
+    if (room && room.isFull() && !room.started && room.bothReadyForRematch()) room.serve();
+  });
+
+  socket.on("ready_rematch", () => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room) return;
+    const player = room.players[socket.id];
+    if (!player) return;
+    room.setReadyForRematch(player.slot);
+    io.to(room.code).emit("state", room.publicState());
+    if (room.bothReadyForRematch()) {
+      io.to(room.code).emit("rematch_ready");
+    }
   });
 
   socket.on("disconnect", () => {
