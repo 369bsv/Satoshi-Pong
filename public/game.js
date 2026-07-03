@@ -77,7 +77,6 @@ const PENDING_ROOM_KEY = "satoshiPongPendingRoom";
 
   if (session) {
     currentSessionId = session;
-    localStorage.removeItem(PENDING_ROOM_KEY);
     showLobby(pendingRoom);
   }
 })();
@@ -100,6 +99,7 @@ function ensureSocket() {
 
   socket.on("joined", (data) => {
     mySlot = data.slot;
+    localStorage.removeItem(PENDING_ROOM_KEY);
     lobbyScreen.classList.add("hidden");
     gameScreen.classList.remove("hidden");
     controlsHint.textContent = mySlot === "p1" ? "W / S or the buttons below to move" : "\u2191 / \u2193 or the buttons below to move";
@@ -109,8 +109,10 @@ function ensureSocket() {
     lobbyError.textContent = message;
     if (message.includes("expired")) {
       localStorage.removeItem(SESSION_STORAGE_KEY);
+      const room = qs("room") || localStorage.getItem(PENDING_ROOM_KEY);
+      if (room) localStorage.setItem(PENDING_ROOM_KEY, room);
       lobbyError.textContent = message + " Reconnecting\u2026";
-      setTimeout(() => { location.href = "/auth/handcash/login" + (qs("room") ? `?room=${qs("room")}` : ""); }, 1500);
+      setTimeout(() => { location.href = "/auth/handcash/login" + (room ? `?room=${room}` : ""); }, 1500);
     }
   });
 
