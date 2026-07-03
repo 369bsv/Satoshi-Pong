@@ -217,7 +217,13 @@ challengeBtn.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok) {
-      lobbyError.textContent = data.error || "Couldn't send that challenge.";
+      const errMsg = data.error || "Couldn't send that challenge.";
+      lobbyError.textContent = errMsg;
+      if (errMsg.includes("expired")) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        lobbyError.textContent = errMsg + " Reconnecting\u2026";
+        setTimeout(() => { location.href = "/auth/handcash/login"; }, 1500);
+      }
       return;
     }
     lobbyShareLabel.textContent = `Challenge sent to $${toHandle}! Now send them this link too:`;
