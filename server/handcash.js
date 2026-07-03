@@ -36,7 +36,7 @@ async function paySats({ fromAuthToken, toHandle, amountSats, description }) {
     client,
     body: {
       instrumentCurrencyCode: "BSV",
-      denominationCurrencyCode: "BSV",
+      denominationCurrencyCode: "BTC",
       receivers: [{ sendAmount: amountBSV, destination: toHandle }],
       description,
     },
