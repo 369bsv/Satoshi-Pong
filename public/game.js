@@ -199,6 +199,7 @@ stakeCustom.addEventListener("input", () => {
 });
 stakePresets.querySelector('[data-stake="1000"]').classList.add("active");
 
+challengeHandleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); challengeBtn.click(); } });
 challengeBtn.addEventListener("click", async () => {
   const toHandle = challengeHandleInput.value.trim();
   if (!toHandle) {
