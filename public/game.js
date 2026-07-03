@@ -1,10 +1,11 @@
 function qs(name) { return new URLSearchParams(location.search).get(name); }
 
-// ---------- DOM ----------
 const connectScreen = document.getElementById("connect-screen");
 const connectBtn = document.getElementById("connect-btn");
 const connectError = document.getElementById("connect-error");
-const feeLabel = document.getElementById("fee-label");
+const stakePresets = document.getElementById("stake-presets");
+const stakeCustom = document.getElementById("stake-custom");
+const stakeLabel = document.getElementById("stake-label");
 
 const lobbyScreen = document.getElementById("lobby-screen");
 const lobbyGreeting = document.getElementById("lobby-greeting");
@@ -16,6 +17,9 @@ const copyLinkBtn = document.getElementById("copy-link-btn");
 const joinCodeInput = document.getElementById("join-code-input");
 const joinRoomBtn = document.getElementById("join-room-btn");
 const lobbyError = document.getElementById("lobby-error");
+const challengeHandleInput = document.getElementById("challenge-handle-input");
+const challengeBtn = document.getElementById("challenge-btn");
+const lobbyShareLabel = document.querySelector("#lobby-share .share-label");
 
 const gameScreen = document.getElementById("game-screen");
 const p1NameEl = document.getElementById("p1-name");
@@ -46,7 +50,6 @@ let mySlot = null;
 let currentSessionId = null;
 let latestState = null;
 
-// ---------- Boot ----------
 (function boot() {
   const session = qs("session");
   const roomFromUrl = qs("room");
@@ -73,7 +76,6 @@ function showLobby(autoJoinRoom) {
   }
 }
 
-// ---------- Socket ----------
 function ensureSocket() {
   if (socket) return socket;
   socket = io();
@@ -125,11 +127,64 @@ function joinRoom(roomCode) {
   ensureSocket().emit("join_room", { sessionId: currentSessionId, roomCode });
 }
 
-// ---------- Lobby actions ----------
+let selectedStake = 10;
+stakePresets.querySelectorAll(".stake-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    selectedStake = parseInt(btn.dataset.stake, 10);
+    stakeCustom.value = "";
+    stakePresets.querySelectorAll(".stake-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+  });
+});
+stakeCustom.addEventListener("input", () => {
+  const v = parseInt(stakeCustom.value, 10);
+  if (v > 0) {
+    selectedStake = v;
+    stakePresets.querySelectorAll(".stake-btn").forEach((b) => b.classList.remove("active"));
+  }
+});
+stakePresets.querySelector('[data-stake="10"]').classList.add("active");
+
+challengeBtn.addEventListener("click", async () => {
+  const toHandle = challengeHandleInput.value.trim();
+  if (!toHandle) {
+    lobbyError.textContent = "Enter a HandCash handle to challenge.";
+    return;
+  }
+  lobbyError.textContent = "";
+  challengeBtn.disabled = true;
+  challengeBtn.textContent = "SENDING…";
+  try {
+    const res = await fetch("/api/challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: currentSessionId, toHandle, hitFeeSats: selectedStake }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      lobbyError.textContent = data.error || "Couldn't send that challenge.";
+      return;
+    }
+    lobbyShareLabel.textContent = `Challenge sent to $${toHandle}!`;
+    shareLink.value = data.joinUrl;
+    lobbyShare.classList.remove("hidden");
+    lobbyCreate.classList.add("hidden");
+    joinRoom(data.code);
+  } finally {
+    challengeBtn.disabled = false;
+    challengeBtn.textContent = "CHALLENGE";
+  }
+});
+
 createRoomBtn.addEventListener("click", async () => {
   lobbyError.textContent = "";
-  const res = await fetch("/api/rooms", { method: "POST" });
+  const res = await fetch("/api/rooms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hitFeeSats: selectedStake }),
+  });
   const { code } = await res.json();
+  lobbyShareLabel.textContent = "Send this link to your opponent:";
   shareLink.value = `${location.origin}/?room=${code}`;
   lobbyShare.classList.remove("hidden");
   lobbyCreate.classList.add("hidden");
@@ -153,7 +208,6 @@ playAgainBtn.addEventListener("click", () => {
   location.href = `/?session=${currentSessionId}`;
 });
 
-// ---------- Controls ----------
 const keys = { up: false, down: false };
 window.addEventListener("keydown", (e) => {
   if (!mySlot) return;
@@ -179,7 +233,6 @@ window.addEventListener("keyup", (e) => {
   socket.emit("input", keys);
 });
 
-// ---------- Rendering ----------
 function renderHud(s) {
   const p1 = s.players.find((p) => p.slot === "p1");
   const p2 = s.players.find((p) => p.slot === "p2");
@@ -187,6 +240,7 @@ function renderHud(s) {
   p2NameEl.textContent = p2 ? p2.name : "\u2014";
   potAmountEl.textContent = s.pot.toLocaleString();
   rallyCountEl.textContent = s.rally;
+  stakeLabel.textContent = s.hitFeeSats?.toLocaleString() ?? "0";
 }
 
 function renderLedger(ledger) {
