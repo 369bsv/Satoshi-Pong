@@ -31,6 +31,7 @@ const rallyCountEl = document.getElementById("rally-count");
 const ledgerLinesEl = document.getElementById("ledger-lines");
 const waitingOverlay = document.getElementById("waiting-overlay");
 const startOverlay = document.getElementById("start-overlay");
+const serveHint = document.getElementById("serve-hint");
 const touchUpBtn = document.getElementById("touch-up");
 const touchDownBtn = document.getElementById("touch-down");
 const controlsHint = document.getElementById("controls-hint");
@@ -122,8 +123,18 @@ function ensureSocket() {
     renderLedger(s.ledger);
     const full = s.players.length === 2;
     const bothReady = s.readyForRematch?.p1 && s.readyForRematch?.p2;
+    const armed = !!s.armedServe;
     waitingOverlay.classList.toggle("hidden", full);
-    startOverlay.classList.toggle("hidden", !full || s.started || !bothReady);
+    startOverlay.classList.toggle("hidden", !full || s.started || armed || !bothReady);
+
+    if (armed && full && bothReady) {
+      serveHint.classList.remove("hidden");
+      serveHint.textContent = s.armedServe === mySlot
+        ? "Tap or press SPACE to launch the ball"
+        : "Opponent is serving\u2026";
+    } else {
+      serveHint.classList.add("hidden");
+    }
 
     if (!gameoverModal.classList.contains("hidden") && mySlot) {
       const iAmReady = s.readyForRematch?.[mySlot];
@@ -295,6 +306,7 @@ function tryServe() {
   }
 }
 startOverlay.addEventListener("click", tryServe);
+canvas.addEventListener("click", tryServe);
 
 touchUpBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("up", true); });
 touchUpBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("up", false); });
