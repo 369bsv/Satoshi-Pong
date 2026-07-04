@@ -467,8 +467,19 @@ copyLinkBtn.addEventListener("click", () => {
   navigator.clipboard?.writeText(shareLink.value);
 });
 
+function extractRoomCode(input) {
+  let s = (input || "").trim();
+  if (!s) return "";
+  s = s.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+  const roomParamMatch = s.match(/[?&]room=([A-Z0-9]{6})/i);
+  if (roomParamMatch) return roomParamMatch[1].toUpperCase();
+  const parts = s.split(/[\/?#]/).filter(Boolean);
+  const last = parts[parts.length - 1] || s;
+  return last.toUpperCase();
+}
+
 joinRoomBtn.addEventListener("click", () => {
-  const code = joinCodeInput.value.trim().toUpperCase();
+  const code = extractRoomCode(joinCodeInput.value);
   if (!code) return;
   lobbyError.textContent = "";
   showJoinConfirm(code);
