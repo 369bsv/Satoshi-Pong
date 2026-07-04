@@ -2,6 +2,11 @@ const { randomUUID } = require("crypto");
 
 const W = 900, H = 480;
 const PADDLE_W = 12, PADDLE_H = 90, PADDLE_SPEED = 7, BALL_R = 8;
+const POWERUP_R = 14;
+const POWERUP_SPAWN_EVERY_HITS = 6;
+const POWERUP_TYPES = ["speed", "shrink", "reverse"];
+const EFFECT_DURATION_MS = 6000;
+const SHRUNK_PADDLE_H = 50;
 
 function makeRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -38,6 +43,11 @@ class Room {
     this.paused = false;
     this.pausedSlot = null;
     this.frozenBall = null;
+    this.powerUp = null;
+    this.hitsSincePowerUp = 0;
+    this.lastHitBy = null;
+    this.effects = { p1: null, p2: null };
+    this.paddleHeights = { p1: PADDLE_H, p2: PADDLE_H };
   }
 
   addPlayer(socketId, { handle, authToken, name }) {
@@ -106,17 +116,36 @@ class Room {
     this.ball = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
     this.readyForRematch = { p1: false, p2: false };
     this.armedServe = null;
+    this.powerUp = null;
+    this.hitsSincePowerUp = 0;
+    this.lastHitBy = null;
+    this.effects = { p1: null, p2: null };
+    this.paddleHeights = { p1: PADDLE_H, p2: PADDLE_H };
   }
 
   step() {
     if (this.paused) return null;
 
-    if (this.input.p1.up) this.paddles.p1 -= PADDLE_SPEED;
-    if (this.input.p1.down) this.paddles.p1 += PADDLE_SPEED;
-    if (this.input.p2.up) this.paddles.p2 -= PADDLE_SPEED;
-    if (this.input.p2.down) this.paddles.p2 += PADDLE_SPEED;
-    this.paddles.p1 = clamp(this.paddles.p1, 0, H - PADDLE_H);
-    this.paddles.p2 = clamp(this.paddles.p2, 0, H - PADDLE_H);
+    const now = Date.now();
+    for (const slot of ["p1", "p2"]) {
+      if (this.effects[slot] && this.effects[slot].expiresAt <= now) this.effects[slot] = null;
+    }
+    this.paddleHeights.p1 = this.effects.p1?.type === "shrink" ? SHRUNK_PADDLE_H : PADDLE_H;
+    this.paddleHeights.p2 = this.effects.p2?.type === "shrink" ? SHRUNK_PADDLE_H : PADDLE_H;
+
+    const p1Reversed = this.effects.p1?.type === "reverse";
+    const p2Reversed = this.effects.p2?.type === "reverse";
+    const p1Up = p1Reversed ? this.input.p1.down : this.input.p1.up;
+    const p1Down = p1Reversed ? this.input.p1.up : this.input.p1.down;
+    const p2Up = p2Reversed ? this.input.p2.down : this.input.p2.up;
+    const p2Down = p2Reversed ? this.input.p2.up : this.input.p2.down;
+
+    if (p1Up) this.paddles.p1 -= PADDLE_SPEED;
+    if (p1Down) this.paddles.p1 += PADDLE_SPEED;
+    if (p2Up) this.paddles.p2 -= PADDLE_SPEED;
+    if (p2Down) this.paddles.p2 += PADDLE_SPEED;
+    this.paddles.p1 = clamp(this.paddles.p1, 0, H - this.paddleHeights.p1);
+    this.paddles.p2 = clamp(this.paddles.p2, 0, H - this.paddleHeights.p2);
 
     if (this.armedServe) {
       this.ball = ballParkedAt(this.armedServe, this.paddles);
@@ -134,10 +163,28 @@ class Room {
       b.y = clamp(b.y, BALL_R, H - BALL_R);
     }
 
-    if (b.x - BALL_R < PADDLE_W + 10 && b.y > this.paddles.p1 && b.y < this.paddles.p1 + PADDLE_H && b.vx < 0) {
+    if (this.powerUp) {
+      const dx = b.x - this.powerUp.x, dy = b.y - this.powerUp.y;
+      if (Math.sqrt(dx * dx + dy * dy) < BALL_R + POWERUP_R) {
+        const effectType = this.powerUp.type;
+        const beneficiary = this.lastHitBy;
+        const target = beneficiary === "p1" ? "p2" : "p1";
+        this.powerUp = null;
+        if (effectType === "speed") {
+          const maxSpeed = 16;
+          b.vx = clamp(b.vx * 1.6, -maxSpeed, maxSpeed);
+          b.vy = clamp(b.vy * 1.6, -maxSpeed, maxSpeed);
+        } else if (beneficiary) {
+          this.effects[target] = { type: effectType, expiresAt: Date.now() + EFFECT_DURATION_MS };
+        }
+        return { type: "powerup", effectType, beneficiary, target };
+      }
+    }
+
+    if (b.x - BALL_R < PADDLE_W + 10 && b.y > this.paddles.p1 && b.y < this.paddles.p1 + this.paddleHeights.p1 && b.vx < 0) {
       return this.bounce("p1");
     }
-    if (b.x + BALL_R > W - PADDLE_W - 10 && b.y > this.paddles.p2 && b.y < this.paddles.p2 + PADDLE_H && b.vx > 0) {
+    if (b.x + BALL_R > W - PADDLE_W - 10 && b.y > this.paddles.p2 && b.y < this.paddles.p2 + this.paddleHeights.p2 && b.vx > 0) {
       return this.bounce("p2");
     }
     if (b.x - BALL_R < 0) return { type: "miss", slot: "p1" };
@@ -148,17 +195,36 @@ class Room {
   bounce(slot) {
     const b = this.ball;
     const paddleY = this.paddles[slot];
+    const paddleH = this.paddleHeights[slot];
     b.vx *= -1.05;
-    const relativeHit = (b.y - (paddleY + PADDLE_H / 2)) / (PADDLE_H / 2);
+    const relativeHit = (b.y - (paddleY + paddleH / 2)) / (paddleH / 2);
     b.vy = relativeHit * 5;
     b.x += b.vx > 0 ? 14 : -14;
+    this.lastHitBy = slot;
+    this.maybeSpawnPowerUp();
     return { type: "hit", slot };
+  }
+
+  maybeSpawnPowerUp() {
+    if (this.powerUp) return;
+    this.hitsSincePowerUp += 1;
+    if (this.hitsSincePowerUp >= POWERUP_SPAWN_EVERY_HITS) {
+      this.hitsSincePowerUp = 0;
+      this.powerUp = {
+        x: W * 0.3 + Math.random() * W * 0.4,
+        y: BALL_R + POWERUP_R + Math.random() * (H - 2 * (BALL_R + POWERUP_R)),
+        type: POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)],
+      };
+    }
   }
 
   publicState() {
     return {
       ball: this.ball,
       paddles: this.paddles,
+      paddleHeights: this.paddleHeights,
+      powerUp: this.powerUp,
+      effects: this.effects,
       started: this.started,
       armedServe: this.armedServe,
       pot: this.pot,
