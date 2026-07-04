@@ -23,6 +23,7 @@ async function paySplit({ fromAuthToken, receivers, description }) {
   const account = accountFor(fromAuthToken);
   const result = await account.wallet.pay({
     description,
+    appAction: "SatoshiPong",
     payments: receivers.map((r) => ({
       destination: r.destination,
       currencyCode: "SAT",
@@ -36,4 +37,10 @@ async function paySats({ fromAuthToken, toHandle, amountSats, description }) {
   return paySplit({ fromAuthToken, receivers: [{ destination: toHandle, amountSats }], description });
 }
 
-module.exports = { getAuthUrl, getProfile, paySats, paySplit };
+async function getSpendableBalanceSats(authToken) {
+  const account = accountFor(authToken);
+  const bsv = await account.wallet.getSpendableBalance("BSV");
+  return Math.round(Number(bsv) * 100000000);
+}
+
+module.exports = { getAuthUrl, getProfile, paySats, paySplit, getSpendableBalanceSats };
