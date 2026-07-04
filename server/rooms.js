@@ -19,10 +19,11 @@ function ballParkedAt(slot, paddles) {
 }
 
 class Room {
-  constructor(code, hitFeeSats) {
+  constructor(code, hitFeeSats, outOfFundsMode) {
     this.code = code;
     this.id = randomUUID();
     this.hitFeeSats = hitFeeSats;
+    this.outOfFundsMode = outOfFundsMode || "forfeit";
     this.players = {};
     this.paddles = { p1: H / 2 - PADDLE_H / 2, p2: H / 2 - PADDLE_H / 2 };
     this.input = { p1: { up: false, down: false }, p2: { up: false, down: false } };
@@ -34,6 +35,9 @@ class Room {
     this.paymentLock = { p1: false, p2: false };
     this.readyForRematch = { p1: true, p2: true };
     this.armedServe = null;
+    this.paused = false;
+    this.pausedSlot = null;
+    this.frozenBall = null;
   }
 
   addPlayer(socketId, { handle, authToken, name }) {
@@ -64,6 +68,25 @@ class Room {
     return this.readyForRematch.p1 && this.readyForRematch.p2;
   }
 
+  pauseFor(slot) {
+    this.paused = true;
+    this.pausedSlot = slot;
+    this.frozenBall = { vx: this.ball.vx, vy: this.ball.vy };
+    this.ball.vx = 0;
+    this.ball.vy = 0;
+  }
+
+  resumeFromPause() {
+    if (!this.paused) return;
+    if (this.frozenBall) {
+      this.ball.vx = this.frozenBall.vx;
+      this.ball.vy = this.frozenBall.vy;
+    }
+    this.paused = false;
+    this.pausedSlot = null;
+    this.frozenBall = null;
+  }
+
   serve(slot) {
     if (this.started) return;
     if (this.armedServe === slot) {
@@ -86,6 +109,8 @@ class Room {
   }
 
   step() {
+    if (this.paused) return null;
+
     if (this.input.p1.up) this.paddles.p1 -= PADDLE_SPEED;
     if (this.input.p1.down) this.paddles.p1 += PADDLE_SPEED;
     if (this.input.p2.up) this.paddles.p2 -= PADDLE_SPEED;
@@ -139,6 +164,9 @@ class Room {
       pot: this.pot,
       rally: this.rally,
       hitFeeSats: this.hitFeeSats,
+      outOfFundsMode: this.outOfFundsMode,
+      paused: this.paused,
+      pausedSlot: this.pausedSlot,
       readyForRematch: this.readyForRematch,
       ledger: this.ledger.slice(-8),
       players: Object.values(this.players).map((p) => ({ slot: p.slot, name: p.name, handle: p.handle })),
@@ -150,10 +178,10 @@ function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
 const rooms = new Map();
 
-function createRoom(hitFeeSats) {
+function createRoom(hitFeeSats, outOfFundsMode) {
   let code;
   do { code = makeRoomCode(); } while (rooms.has(code));
-  const room = new Room(code, hitFeeSats);
+  const room = new Room(code, hitFeeSats, outOfFundsMode);
   rooms.set(code, room);
   return room;
 }
