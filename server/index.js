@@ -35,6 +35,11 @@ function nearestStakeLevel(sats) {
   );
 }
 
+const VALID_OUT_OF_FUNDS_MODES = ["forfeit", "draw", "pause"];
+function normalizeOutOfFundsMode(mode) {
+  return VALID_OUT_OF_FUNDS_MODES.includes(mode) ? mode : "pause";
+}
+
 if (!process.env.HANDCASH_APP_ID || !process.env.HANDCASH_APP_SECRET) {
   console.warn("⚠️  HANDCASH_APP_ID / HANDCASH_APP_SECRET are not set. Auth will fail until you set them.");
 }
@@ -51,6 +56,25 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, "..", "public")));
 app.use(express.json());
+
+let priceCache = { usdPerBsv: null, fetchedAt: 0 };
+const PRICE_CACHE_MS = 5 * 60 * 1000;
+async function getBsvUsdPrice() {
+  const now = Date.now();
+  if (priceCache.usdPerBsv && now - priceCache.fetchedAt < PRICE_CACHE_MS) return priceCache.usdPerBsv;
+  try {
+    const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin-cash-sv&vs_currencies=usd");
+    const data = await res.json();
+    const price = data?.["bitcoin-cash-sv"]?.usd;
+    if (price) priceCache = { usdPerBsv: price, fetchedAt: now };
+  } catch (err) {
+    console.warn("BSV price fetch failed:", err.message);
+  }
+  return priceCache.usdPerBsv;
+}
+app.get("/api/price", async (req, res) => {
+  res.json({ usdPerBsv: await getBsvUsdPrice() });
+});
 
 const sessions = new Map();
 
@@ -93,6 +117,17 @@ app.get("/auth/handcash/callback", async (req, res) => {
   }
 });
 
+app.get("/api/balance", async (req, res) => {
+  const session = sessions.get(req.query.sessionId);
+  if (!session) return res.status(401).json({ error: "Session expired." });
+  try {
+    const sats = await handcash.getSpendableBalanceSats(session.authToken);
+    res.json({ sats });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 const SATS_GRANULARITY = 1000;
 function roundToGranularity(sats) {
   return Math.max(SATS_GRANULARITY, Math.round(sats / SATS_GRANULARITY) * SATS_GRANULARITY);
@@ -113,14 +148,31 @@ function clampStake(sats) {
 
 app.post("/api/rooms", (req, res) => {
   const hitFeeSats = clampStake(parseInt(req.body?.hitFeeSats, 10));
+  const outOfFundsMode = normalizeOutOfFundsMode(req.body?.outOfFundsMode);
   const level = nearestStakeLevel(hitFeeSats);
-  const room = createRoom(hitFeeSats);
-  res.json({ code: room.code, hitFeeSats: room.hitFeeSats, level: level.level, label: level.label, feePercent: level.feePercent });
+  const room = createRoom(hitFeeSats, outOfFundsMode);
+  res.json({ code: room.code, hitFeeSats: room.hitFeeSats, level: level.level, label: level.label, feePercent: level.feePercent, outOfFundsMode });
+});
+
+app.get("/api/room-info/:code", (req, res) => {
+  const room = getRoom(req.params.code.toUpperCase());
+  if (!room) return res.status(404).json({ error: "That room code doesn't exist." });
+  const level = nearestStakeLevel(room.hitFeeSats);
+  res.json({
+    code: room.code,
+    hitFeeSats: room.hitFeeSats,
+    level: level.level,
+    label: level.label,
+    feePercent: level.feePercent,
+    outOfFundsMode: room.outOfFundsMode,
+    full: room.isFull(),
+  });
 });
 
 app.post("/api/challenge", async (req, res) => {
   const { sessionId, toHandle: rawHandle } = req.body || {};
   const hitFeeSats = clampStake(parseInt(req.body?.hitFeeSats, 10));
+  const outOfFundsMode = normalizeOutOfFundsMode(req.body?.outOfFundsMode);
   const level = nearestStakeLevel(hitFeeSats);
 
   const session = sessions.get(sessionId);
@@ -132,7 +184,7 @@ app.post("/api/challenge", async (req, res) => {
     return res.status(400).json({ error: "You can't challenge yourself." });
   }
 
-  const room = createRoom(hitFeeSats);
+  const room = createRoom(hitFeeSats, outOfFundsMode);
   const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
   const joinUrl = `${baseUrl.replace(/\/$/, "")}/${room.code}`;
   const shortForm = joinUrl.replace(/^https?:\/\//, "");
@@ -145,7 +197,7 @@ app.post("/api/challenge", async (req, res) => {
       amountSats: CHALLENGE_FEE_SATS,
       description,
     });
-    res.json({ code: room.code, hitFeeSats: room.hitFeeSats, level: level.level, label: level.label, feePercent: level.feePercent, joinUrl });
+    res.json({ code: room.code, hitFeeSats: room.hitFeeSats, level: level.level, label: level.label, feePercent: level.feePercent, outOfFundsMode, joinUrl });
   } catch (err) {
     deleteRoom(room.code);
     console.error(`Challenge to $${toHandle} failed:`, err.message);
@@ -194,142 +246,3 @@ async function handleHit(room, slot) {
   try {
     const tx = await handcash.paySats({
       fromAuthToken: player.authToken,
-      toHandle: HOUSE_HANDLE,
-      amountSats: hitFee,
-      description: `Pong hit ${room.rally + 1}`,
-    });
-    room.pot += hitFee;
-    room.rally += 1;
-    room.ledger.push({
-      txid: tx.transactionId,
-      from: player.name,
-      amountSats: hitFee,
-      rally: room.rally,
-    });
-  } catch (err) {
-    console.warn(`Payment failed for ${player.name} in room ${room.code}:`, err.message);
-    io.to(room.code).emit("payment_failed", { slot, message: err.message });
-    handleMiss(room, slot);
-  }
-}
-
-async function handleMiss(room, missedSlot) {
-  if (!room.started && room.rally === 0 && room.pot === 0) return;
-  room.started = false;
-  const winner = room.playerBySlot(missedSlot === "p1" ? "p2" : "p1");
-  const loser = room.playerBySlot(missedSlot);
-  if (!winner) return;
-
-  let payoutTx = null;
-  const potAtEnd = room.pot;
-  const feePercent = nearestStakeLevel(room.hitFeeSats).feePercent;
-  const devCut = DEV_HANDLE ? roundDevCut(potAtEnd, feePercent) : 0;
-  const winnerAmount = potAtEnd - devCut;
-
-  if (potAtEnd > 0) {
-    try {
-      const receivers = [{ destination: winner.handle, amountSats: winnerAmount }];
-      if (devCut > 0) receivers.push({ destination: DEV_HANDLE, amountSats: devCut });
-      payoutTx = await handcash.paySplit({
-        fromAuthToken: HOUSE_AUTH_TOKEN,
-        receivers,
-        description: `Pong payout`,
-      });
-    } catch (err) {
-      console.error(`Payout failed in room ${room.code}:`, err.message);
-      io.to(room.code).emit("payout_failed", { message: err.message });
-    }
-  }
-
-  const entry = {
-    winner: winner.name,
-    rally: room.rally,
-    potSats: potAtEnd,
-    date: new Date().toISOString(),
-  };
-  const board = addLeaderboardEntry(entry);
-
-  io.to(room.code).emit("game_over", {
-    winner: winner.name,
-    rally: room.rally,
-    potSats: potAtEnd,
-    winnerAmount,
-    devCut,
-    payoutTxid: payoutTx ? payoutTx.transactionId : null,
-    payoutFailed: potAtEnd > 0 && !payoutTx,
-    leaderboard: board,
-  });
-
-  room.pot = 0;
-  room.rally = 0;
-  room.ledger = [];
-  room.resetAfterPoint();
-}
-
-io.on("connection", (socket) => {
-  socket.on("join_room", ({ sessionId, roomCode }) => {
-    const session = sessions.get(sessionId);
-    if (!session) {
-      socket.emit("join_error", { message: "Your HandCash session expired. Please reconnect your wallet." });
-      return;
-    }
-    const room = getRoom(roomCode);
-    if (!room) {
-      socket.emit("join_error", { message: "That room code doesn't exist." });
-      return;
-    }
-    const slot = room.addPlayer(socket.id, session);
-    if (!slot) {
-      socket.emit("join_error", { message: "That room is already full." });
-      return;
-    }
-    socket.data.roomCode = roomCode;
-    socket.join(roomCode);
-    socket.emit("joined", { slot, roomCode, name: session.name, handle: session.handle });
-    io.to(roomCode).emit("state", room.publicState());
-    if (room.isFull()) startLoop(room);
-  });
-
-  socket.on("input", ({ up, down }) => {
-    const roomCode = socket.data.roomCode;
-    const room = getRoom(roomCode);
-    if (!room) return;
-    const player = room.players[socket.id];
-    if (!player) return;
-    room.input[player.slot] = { up: !!up, down: !!down };
-  });
-
-  socket.on("serve", () => {
-    const room = getRoom(socket.data.roomCode);
-    if (!room) return;
-    const player = room.players[socket.id];
-    if (player && room.isFull() && !room.started && room.bothReadyForRematch()) room.serve(player.slot);
-  });
-
-  socket.on("ready_rematch", () => {
-    const room = getRoom(socket.data.roomCode);
-    if (!room) return;
-    const player = room.players[socket.id];
-    if (!player) return;
-    room.setReadyForRematch(player.slot);
-    io.to(room.code).emit("state", room.publicState());
-    if (room.bothReadyForRematch()) {
-      io.to(room.code).emit("rematch_ready");
-    }
-  });
-
-  socket.on("disconnect", () => {
-    const roomCode = socket.data.roomCode;
-    const room = getRoom(roomCode);
-    if (!room) return;
-    room.removePlayer(socket.id);
-    io.to(roomCode).emit("opponent_left");
-    stopLoop(roomCode);
-    deleteRoom(roomCode);
-  });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Satoshi Pong (live) running on port ${PORT}`);
-});
