@@ -208,6 +208,7 @@ function ensureSocket() {
   socket = io();
 
   socket.on("joined", (data) => {
+    hideLoading();
     mySlot = data.slot;
     localStorage.removeItem(PENDING_ROOM_KEY);
     lobbyScreen.classList.add("hidden");
