@@ -59,6 +59,7 @@ let latestState = null;
 
 const SESSION_STORAGE_KEY = "satoshiPongSessionId";
 const PENDING_ROOM_KEY = "satoshiPongPendingRoom";
+const PENDING_CHALLENGE_KEY = "satoshiPongPendingChallenge";
 
 (function boot() {
   const sessionFromUrl = qs("session");
@@ -91,6 +92,11 @@ function showLobby(autoJoinRoom) {
     joinRoom(autoJoinRoom);
   } else {
     lobbyGreeting.textContent = "Connected. Create a room or join one.";
+    const pendingChallenge = localStorage.getItem(PENDING_CHALLENGE_KEY);
+    if (pendingChallenge) {
+      challengeHandleInput.value = pendingChallenge;
+      localStorage.removeItem(PENDING_CHALLENGE_KEY);
+    }
   }
 }
 
@@ -232,6 +238,7 @@ challengeBtn.addEventListener("click", async () => {
       const errMsg = data.error || "Couldn't send that challenge.";
       if (errMsg.includes("expired")) {
         localStorage.removeItem(SESSION_STORAGE_KEY);
+        localStorage.setItem(PENDING_CHALLENGE_KEY, toHandle);
         lobbyGreeting.textContent = "Reconnecting\u2026";
         location.href = "/auth/handcash/login";
         return;
