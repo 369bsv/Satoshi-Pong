@@ -3,8 +3,11 @@ function qs(name) { return new URLSearchParams(location.search).get(name); }
 const connectScreen = document.getElementById("connect-screen");
 const connectBtn = document.getElementById("connect-btn");
 const connectError = document.getElementById("connect-error");
-const stakePresets = document.getElementById("stake-presets");
-const stakeCustom = document.getElementById("stake-custom");
+const stakeSlider = document.getElementById("stake-slider");
+const stakeCustomInput = document.getElementById("stake-custom-input");
+const stakeLevelLabel = document.getElementById("stake-level-label");
+const stakeSatsLabel = document.getElementById("stake-sats-label");
+const stakeFeeLabel = document.getElementById("stake-fee-label");
 const stakeLabel = document.getElementById("stake-label");
 
 const lobbyScreen = document.getElementById("lobby-screen");
@@ -199,23 +202,53 @@ function renderInviteQr(url) {
   }
 }
 
-let selectedStake = 1000;
-stakePresets.querySelectorAll(".stake-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    selectedStake = parseInt(btn.dataset.stake, 10);
-    stakeCustom.value = "";
-    stakePresets.querySelectorAll(".stake-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-  });
-});
-stakeCustom.addEventListener("input", () => {
-  const v = parseInt(stakeCustom.value, 10);
-  if (v > 0) {
-    selectedStake = v;
-    stakePresets.querySelectorAll(".stake-btn").forEach((b) => b.classList.remove("active"));
-  }
-});
-stakePresets.querySelector('[data-stake="1000"]').classList.add("active");
+const STAKE_LEVELS = [
+  { level: 1, sats: 1000, label: "Easy", feePercent: 10 },
+  { level: 2, sats: 5000, label: "Easy+", feePercent: 9 },
+  { level: 3, sats: 10000, label: "Casual", feePercent: 8 },
+  { level: 4, sats: 50000, label: "Casual+", feePercent: 7 },
+  { level: 5, sats: 100000, label: "Moderate", feePercent: 6 },
+  { level: 6, sats: 500000, label: "Moderate+", feePercent: 5 },
+  { level: 7, sats: 1000000, label: "High Stakes", feePercent: 4 },
+  { level: 8, sats: 5000000, label: "High Stakes+", feePercent: 3 },
+  { level: 9, sats: 10000000, label: "Whale", feePercent: 2 },
+  { level: 10, sats: 100000000, label: "Max (1 BSV/hit)", feePercent: 1 },
+];
+
+function nearestStakeLevel(sats) {
+  const target = Math.log(Math.max(sats, 1));
+  return STAKE_LEVELS.reduce((best, lvl) =>
+    Math.abs(Math.log(lvl.sats) - target) < Math.abs(Math.log(best.sats) - target) ? lvl : best
+  );
+}
+
+let selectedStake = STAKE_LEVELS[0].sats;
+
+function renderFromSlider() {
+  const lvl = STAKE_LEVELS[parseInt(stakeSlider.value, 10) - 1];
+  selectedStake = lvl.sats;
+  stakeCustomInput.value = "";
+  updateStakeLabels(lvl, lvl.sats);
+}
+
+function renderFromCustom() {
+  const typed = parseInt(stakeCustomInput.value, 10);
+  if (!Number.isFinite(typed) || typed <= 0) return;
+  selectedStake = typed;
+  const lvl = nearestStakeLevel(typed);
+  stakeSlider.value = lvl.level;
+  updateStakeLabels(lvl, typed);
+}
+
+function updateStakeLabels(lvl, actualSats) {
+  stakeLevelLabel.textContent = `${lvl.level}. ${lvl.label}`;
+  stakeSatsLabel.textContent = `${actualSats.toLocaleString()} sats / hit`;
+  stakeFeeLabel.textContent = `${lvl.feePercent}% fee`;
+}
+
+stakeSlider.addEventListener("input", renderFromSlider);
+stakeCustomInput.addEventListener("input", renderFromCustom);
+renderFromSlider();
 
 challengeHandleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); challengeBtn.click(); } });
 challengeBtn.addEventListener("click", async () => {
