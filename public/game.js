@@ -40,11 +40,9 @@ function hideLoading() {
 const joinConfirmModal = document.getElementById("join-confirm-modal");
 const jcCode = document.getElementById("jc-code");
 const jcSats = document.getElementById("jc-sats");
-const jcUsd = document.getElementById("jc-usd");
 const jcFee = document.getElementById("jc-fee");
 const jcMode = document.getElementById("jc-mode");
 const jcBalance = document.getElementById("jc-balance");
-const jcHits = document.getElementById("jc-hits");
 const jcError = document.getElementById("jc-error");
 const jcAcceptBtn = document.getElementById("jc-accept-btn");
 const jcCancelBtn = document.getElementById("jc-cancel-btn");
@@ -58,6 +56,7 @@ const ledgerLinesEl = document.getElementById("ledger-lines");
 const waitingOverlay = document.getElementById("waiting-overlay");
 const startOverlay = document.getElementById("start-overlay");
 const serveHint = document.getElementById("serve-hint");
+const powerupBanner = document.getElementById("powerup-banner");
 const touchUpBtn = document.getElementById("touch-up");
 const touchDownBtn = document.getElementById("touch-down");
 const controlsHint = document.getElementById("controls-hint");
@@ -66,6 +65,7 @@ const pausedText = document.getElementById("paused-text");
 const topupOverlay = document.getElementById("topup-overlay");
 const topupText = document.getElementById("topup-text");
 const topupRetryBtn = document.getElementById("topup-retry-btn");
+const topupCancelBtn = document.getElementById("topup-cancel-btn");
 
 const gameoverModal = document.getElementById("gameover-modal");
 const winnerHeading = document.getElementById("winner-heading");
@@ -144,11 +144,9 @@ async function showJoinConfirm(code) {
   pendingJoinCode = code.toUpperCase();
   jcCode.textContent = pendingJoinCode;
   jcSats.textContent = "\u2026";
-  jcUsd.textContent = "\u2014";
   jcFee.textContent = "\u2026";
   jcMode.textContent = "\u2026";
   jcBalance.textContent = "\u2026";
-  jcHits.textContent = "\u2014";
   jcError.textContent = "";
   joinConfirmModal.classList.remove("hidden");
 
@@ -159,8 +157,7 @@ async function showJoinConfirm(code) {
       jcError.textContent = info.error || "That room code doesn't exist.";
       return;
     }
-    jcSats.textContent = `${info.hitFeeSats.toLocaleString()} sats`;
-    jcUsd.textContent = usdEstimate(info.hitFeeSats).trim() || "\u2014";
+    jcSats.textContent = `${info.hitFeeSats.toLocaleString()} sats${usdEstimate(info.hitFeeSats)}`;
     jcFee.textContent = `${info.feePercent}%`;
     jcMode.textContent = oofModeLabel(info.outOfFundsMode);
 
@@ -172,11 +169,10 @@ async function showJoinConfirm(code) {
     } catch {}
 
     if (balanceSats != null) {
-      jcBalance.textContent = `${balanceSats.toLocaleString()} sats${usdEstimate(balanceSats)}`;
-      jcHits.textContent = `~${Math.floor(balanceSats / info.hitFeeSats)} hits`;
+      const hits = Math.floor(balanceSats / info.hitFeeSats);
+      jcBalance.textContent = `${balanceSats.toLocaleString()} sats (~${hits} hits)`;
     } else {
       jcBalance.textContent = "Unavailable";
-      jcHits.textContent = "\u2014";
     }
   } catch (err) {
     jcError.textContent = "Couldn't load room details: " + err.message;
@@ -217,6 +213,7 @@ function ensureSocket() {
   });
 
   socket.on("join_error", ({ message }) => {
+    hideLoading();
     if (message.includes("expired")) {
       localStorage.removeItem(SESSION_STORAGE_KEY);
       const room = qs("room") || localStorage.getItem(PENDING_ROOM_KEY);
@@ -252,10 +249,11 @@ function ensureSocket() {
 
     if (s.paused) {
       topupOverlay.classList.remove("hidden");
+      topupCancelBtn.disabled = false;
       const needsTopUp = s.pausedSlot === mySlot;
       topupText.textContent = needsTopUp
-        ? `You're short on funds for this hit. Raise your HandCash spending limit or add funds, then retry.`
-        : `Waiting for opponent to top up their HandCash balance/limit\u2026`;
+        ? `Short on funds. Raise your HandCash limit or add funds, then retry.`
+        : `Waiting for opponent to top up\u2026`;
       topupRetryBtn.classList.toggle("hidden", !needsTopUp);
     } else {
       topupOverlay.classList.add("hidden");
@@ -281,6 +279,21 @@ function ensureSocket() {
     pausedText.textContent = `${slot.toUpperCase()} couldn't cover that hit: ${message}`;
     pausedOverlay.classList.remove("hidden");
     setTimeout(() => pausedOverlay.classList.add("hidden"), 3000);
+  });
+
+  socket.on("powerup_triggered", ({ effectType, beneficiary, target }) => {
+    const who = (slot) => {
+      const p = latestState?.players.find((pl) => pl.slot === slot);
+      return p ? p.name : slot?.toUpperCase();
+    };
+    const messages = {
+      speed: "\u26a1 SPEED SURGE!",
+      shrink: `\ud83d\udd3b SHRINK RAY hit ${who(target)}!`,
+      reverse: `\ud83d\udd04 ${who(target)}'s controls REVERSED!`,
+    };
+    powerupBanner.textContent = messages[effectType] || "POWER-UP!";
+    powerupBanner.classList.remove("hidden");
+    setTimeout(() => powerupBanner.classList.add("hidden"), 2200);
   });
 
   socket.on("resumed", () => {
@@ -322,274 +335,4 @@ function ensureSocket() {
   });
 
   return socket;
-}function joinRoom(roomCode) {
-  ensureSocket().emit("join_room", { sessionId: currentSessionId, roomCode });
 }
-
-topupRetryBtn.addEventListener("click", () => {
-  topupRetryBtn.disabled = true;
-  topupRetryBtn.textContent = "RETRYING\u2026";
-  socket.emit("resume_after_topup");
-  setTimeout(() => {
-    topupRetryBtn.disabled = false;
-    topupRetryBtn.textContent = "I'VE TOPPED UP \u2014 RETRY";
-  }, 2000);
-});
-
-function renderInviteQr(url) {
-  if (window.QRCode) {
-    QRCode.toCanvas(inviteQrCanvas, url, { width: 180, margin: 1 }, (err) => {
-      if (err) console.error("QR render failed:", err);
-    });
-  }
-}
-
-function selectedOutOfFundsMode() {
-  const checked = document.querySelector('input[name="oof-mode"]:checked');
-  return checked ? checked.value : "pause";
-}
-
-const STAKE_LEVELS = [
-  { level: 1, sats: 1000, label: "Easy", feePercent: 10 },
-  { level: 2, sats: 5000, label: "Easy+", feePercent: 9 },
-  { level: 3, sats: 10000, label: "Casual", feePercent: 8 },
-  { level: 4, sats: 50000, label: "Casual+", feePercent: 7 },
-  { level: 5, sats: 100000, label: "Moderate", feePercent: 6 },
-  { level: 6, sats: 500000, label: "Moderate+", feePercent: 5 },
-  { level: 7, sats: 1000000, label: "High Stakes", feePercent: 4 },
-  { level: 8, sats: 5000000, label: "High Stakes+", feePercent: 3 },
-  { level: 9, sats: 10000000, label: "Whale", feePercent: 2 },
-  { level: 10, sats: 100000000, label: "Max (1 BSV/hit)", feePercent: 1 },
-];
-
-function nearestStakeLevel(sats) {
-  const target = Math.log(Math.max(sats, 1));
-  return STAKE_LEVELS.reduce((best, lvl) =>
-    Math.abs(Math.log(lvl.sats) - target) < Math.abs(Math.log(best.sats) - target) ? lvl : best
-  );
-}
-
-let selectedStake = STAKE_LEVELS[0].sats;
-
-function renderFromSlider() {
-  const lvl = STAKE_LEVELS[parseInt(stakeSlider.value, 10) - 1];
-  selectedStake = lvl.sats;
-  stakeCustomInput.value = "";
-  updateStakeLabels(lvl, lvl.sats);
-}
-
-function renderFromCustom() {
-  const typed = parseInt(stakeCustomInput.value, 10);
-  if (!Number.isFinite(typed) || typed <= 0) return;
-  selectedStake = typed;
-  const lvl = nearestStakeLevel(typed);
-  stakeSlider.value = lvl.level;
-  updateStakeLabels(lvl, typed);
-}
-
-function updateStakeLabels(lvl, actualSats) {
-  stakeLevelLabel.textContent = `${lvl.level}. ${lvl.label}`;
-  stakeSatsLabel.textContent = `${actualSats.toLocaleString()} sats / hit`;
-  stakeFeeLabel.textContent = `${lvl.feePercent}% fee`;
-  stakeUsdLabel.textContent = usdPerBsv ? `\u2248 ${usdEstimate(actualSats).trim()} per hit` : "";
-}
-
-stakeSlider.addEventListener("input", renderFromSlider);
-stakeCustomInput.addEventListener("input", renderFromCustom);
-renderFromSlider();
-
-challengeHandleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); challengeBtn.click(); } });
-challengeBtn.addEventListener("click", async () => {
-  const toHandle = challengeHandleInput.value.trim();
-  if (!toHandle) {
-    lobbyError.textContent = "Enter a HandCash handle to challenge.";
-    return;
-  }
-  lobbyError.textContent = "";
-  challengeBtn.disabled = true;
-  challengeBtn.textContent = "SENDING…";
-  try {
-    const res = await fetch("/api/challenge", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: currentSessionId, toHandle, hitFeeSats: selectedStake, outOfFundsMode: selectedOutOfFundsMode() }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      const errMsg = data.error || "Couldn't send that challenge.";
-      if (errMsg.includes("expired")) {
-        localStorage.removeItem(SESSION_STORAGE_KEY);
-        localStorage.setItem(PENDING_CHALLENGE_KEY, toHandle);
-        lobbyGreeting.textContent = "Reconnecting\u2026";
-        location.href = "/auth/handcash/login";
-        return;
-      }
-      lobbyError.textContent = errMsg;
-      return;
-    }
-    lobbyShareLabel.textContent = `Challenge sent to $${toHandle}! Now send them this link too:`;
-    lobbyShareSub.textContent = `The payment note only carries the room code (HandCash notes are short) -- text them the link, or have them scan the QR code.`;
-    shareLink.value = data.joinUrl;
-    renderInviteQr(data.joinUrl);
-    lobbyShare.classList.remove("hidden");
-    lobbyCreate.classList.add("hidden");
-    joinRoom(data.code);
-  } catch (err) {
-    console.error("Challenge request failed:", err);
-    lobbyError.textContent = "Something went wrong sending that challenge: " + err.message;
-  } finally {
-    challengeBtn.disabled = false;
-    challengeBtn.textContent = "CHALLENGE";
-  }
-});
-
-createRoomBtn.addEventListener("click", async () => {
-  lobbyError.textContent = "";
-  showLoading("Creating room\u2026");
-  const res = await fetch("/api/rooms", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ hitFeeSats: selectedStake, outOfFundsMode: selectedOutOfFundsMode() }),
-  });
-  const { code } = await res.json();
-  lobbyShareLabel.textContent = "Send this link to your opponent:";
-  lobbyShareSub.textContent = "Waiting for them to join\u2026";
-  shareLink.value = `${location.origin}/${code}`;
-  renderInviteQr(shareLink.value);
-  lobbyShare.classList.remove("hidden");
-  lobbyCreate.classList.add("hidden");
-  showLoading("Setting up your room\u2026");
-  joinRoom(code);
-});
-
-copyLinkBtn.addEventListener("click", () => {
-  shareLink.select();
-  navigator.clipboard?.writeText(shareLink.value);
-});
-
-function extractRoomCode(input) {
-  let s = (input || "").trim();
-  if (!s) return "";
-  s = s.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
-  const roomParamMatch = s.match(/[?&]room=([A-Z0-9]{6})/i);
-  if (roomParamMatch) return roomParamMatch[1].toUpperCase();
-  const parts = s.split(/[\/?#]/).filter(Boolean);
-  const last = parts[parts.length - 1] || s;
-  return last.toUpperCase();
-}
-
-joinRoomBtn.addEventListener("click", () => {
-  const code = extractRoomCode(joinCodeInput.value);
-  if (!code) return;
-  lobbyError.textContent = "";
-  showJoinConfirm(code);
-});
-joinCodeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoomBtn.click(); });
-
-rematchBtn.addEventListener("click", () => {
-  socket.emit("ready_rematch");
-  rematchBtn.textContent = "WAITING FOR OPPONENT\u2026";
-  rematchBtn.disabled = true;
-});
-
-playAgainBtn.addEventListener("click", () => {
-  location.href = `/?session=${currentSessionId}`;
-});
-
-const keys = { up: false, down: false };
-
-function setKey(dir, value) {
-  keys[dir] = value;
-  if (mySlot) socket.emit("input", keys);
-}
-
-function tryServe() {
-  if (mySlot && latestState && latestState.players.length === 2 && !latestState.started && !latestState.paused) {
-    socket.emit("serve");
-  }
-}
-startOverlay.addEventListener("click", tryServe);
-canvas.addEventListener("click", tryServe);
-
-touchUpBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("up", true); });
-touchUpBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("up", false); });
-touchUpBtn.addEventListener("pointerleave", () => setKey("up", false));
-touchUpBtn.addEventListener("pointercancel", () => setKey("up", false));
-
-touchDownBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("down", true); });
-touchDownBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("down", false); });
-touchDownBtn.addEventListener("pointerleave", () => setKey("down", false));
-touchDownBtn.addEventListener("pointercancel", () => setKey("down", false));
-
-window.addEventListener("keydown", (e) => {
-  if (!mySlot) return;
-  if (e.code === "Space") {
-    e.preventDefault();
-    tryServe();
-  }
-  const isMoveKey =
-    (mySlot === "p1" && (e.code === "KeyW" || e.code === "KeyS")) ||
-    (mySlot === "p2" && (e.code === "ArrowUp" || e.code === "ArrowDown"));
-  if (!isMoveKey) return;
-  e.preventDefault();
-  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", true);
-  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", true);
-});
-window.addEventListener("keyup", (e) => {
-  if (!mySlot) return;
-  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", false);
-  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", false);
-});
-
-function renderHud(s) {
-  const p1 = s.players.find((p) => p.slot === "p1");
-  const p2 = s.players.find((p) => p.slot === "p2");
-  p1NameEl.textContent = p1 ? p1.name : "\u2014";
-  p2NameEl.textContent = p2 ? p2.name : "\u2014";
-  potAmountEl.textContent = s.pot.toLocaleString();
-  rallyCountEl.textContent = s.rally;
-  stakeLabel.textContent = s.hitFeeSats?.toLocaleString() ?? "0";
-}
-
-function renderLedger(ledger) {
-  ledgerLinesEl.innerHTML = "";
-  ledger.forEach((e) => {
-    const line = document.createElement("div");
-    line.className = "ledger-line";
-    line.innerHTML = `<span class="dim">${(e.txid || "").slice(0, 12)}\u2026</span> <span class="amt">+${e.amountSats} sats</span> <span class="dim">from</span> ${e.from} <span class="dim">\u2192 pot \u00b7 rally #${e.rally}</span>`;
-    ledgerLinesEl.appendChild(line);
-  });
-}
-
-function renderLeaderboard(list) {
-  leaderboardListEl.innerHTML = "";
-  list.slice(0, 10).forEach((entry, i) => {
-    const li = document.createElement("li");
-    li.innerHTML = `<span>#${i + 1} ${entry.winner}</span><span>${entry.rally} hits \u00b7 ${entry.potSats} sats</span>`;
-    leaderboardListEl.appendChild(li);
-  });
-}
-
-function draw() {
-  requestAnimationFrame(draw);
-  const W = canvas.width, H = canvas.height;
-  ctx.fillStyle = "#05070a";
-  ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "#232b33";
-  ctx.setLineDash([6, 10]);
-  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
-  ctx.setLineDash([]);
-
-  if (!latestState) return;
-  const { paddles, ball } = latestState;
-
-  ctx.fillStyle = "#3ddc84";
-  ctx.fillRect(10, paddles.p1, PADDLE_W, PADDLE_H);
-  ctx.fillRect(W - PADDLE_W - 10, paddles.p2, PADDLE_W, PADDLE_H);
-
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
-  ctx.fillStyle = "#f4b93e";
-  ctx.fill();
-}
-draw();
