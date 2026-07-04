@@ -445,6 +445,7 @@ challengeBtn.addEventListener("click", async () => {
 
 createRoomBtn.addEventListener("click", async () => {
   lobbyError.textContent = "";
+  showLoading("Creating room\u2026");
   const res = await fetch("/api/rooms", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -457,6 +458,7 @@ createRoomBtn.addEventListener("click", async () => {
   renderInviteQr(shareLink.value);
   lobbyShare.classList.remove("hidden");
   lobbyCreate.classList.add("hidden");
+  showLoading("Setting up your room\u2026");
   joinRoom(code);
 });
 
