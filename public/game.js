@@ -191,6 +191,7 @@ function oofModeLabel(mode) {
 
 jcAcceptBtn.addEventListener("click", () => {
   joinConfirmModal.classList.add("hidden");
+  showLoading("Joining game\u2026");
   if (pendingJoinCode) joinRoom(pendingJoinCode);
 });
 
