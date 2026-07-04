@@ -27,14 +27,13 @@
       <p class="tagline" id="lobby-greeting">Connected.</p>
 
       <div id="lobby-create">
-        <p class="share-label" style="margin-top:0;">Sats per hit (minimum 1000):</p>
-        <div class="stake-row" id="stake-presets">
-          <button class="stake-btn" data-stake="1000">1,000</button>
-          <button class="stake-btn" data-stake="10000">10,000</button>
-          <button class="stake-btn" data-stake="100000">100,000</button>
-          <button class="stake-btn" data-stake="1000000">1,000,000</button>
+        <p class="share-label" style="margin-top:0;">Stake level: <span id="stake-level-label">Easy</span></p>
+        <input type="range" id="stake-slider" class="stake-slider" min="1" max="10" step="1" value="1" />
+        <div class="stake-info">
+          <span id="stake-sats-label">1,000 sats / hit</span>
+          <span id="stake-fee-label">10% fee</span>
         </div>
-        <input id="stake-custom" type="number" min="1000" step="1000" placeholder="or type a custom amount (multiple of 1000)" />
+        <input id="stake-custom-input" type="number" min="1000" step="1000" placeholder="or type an exact sat amount" />
 
         <p class="share-label">Challenge a HandCash handle:</p>
         <div class="share-row">
