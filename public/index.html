@@ -34,6 +34,23 @@
           <span id="stake-fee-label">10% fee</span>
         </div>
         <input id="stake-custom-input" type="number" min="1000" step="1000" placeholder="or type an exact sat amount" />
+        <p id="stake-usd-label" class="overlay-sub" style="text-align:left; margin-top:-14px; margin-bottom:16px;"></p>
+
+        <p class="share-label">If a player runs low on funds mid-rally:</p>
+        <div class="oof-options" id="oof-options">
+          <label class="oof-option">
+            <input type="radio" name="oof-mode" value="pause" checked />
+            <span><strong>Pause &amp; top up</strong> &mdash; game waits while they raise their limit or add funds (fairest for long rallies)</span>
+          </label>
+          <label class="oof-option">
+            <input type="radio" name="oof-mode" value="draw" />
+            <span><strong>Draw</strong> &mdash; pot splits evenly right away</span>
+          </label>
+          <label class="oof-option">
+            <input type="radio" name="oof-mode" value="forfeit" />
+            <span><strong>Forfeit</strong> &mdash; they lose the point immediately</span>
+          </label>
+        </div>
 
         <p class="share-label">Challenge a HandCash handle:</p>
         <div class="share-row">
@@ -103,6 +120,10 @@
       <div id="paused-overlay" class="overlay hidden">
         <p id="paused-text">Payment failed &mdash; point over</p>
       </div>
+      <div id="topup-overlay" class="overlay hidden">
+        <p id="topup-text">Waiting for opponent to top up&hellip;</p>
+        <button id="topup-retry-btn" class="btn-small hidden" style="margin-top:12px;">I'VE TOPPED UP &mdash; RETRY</button>
+      </div>
     </main>
 
     <div class="touch-controls">
@@ -117,6 +138,22 @@
       </div>
       <div id="ledger-lines" class="ledger-lines"></div>
     </section>
+  </div>
+
+  <div id="join-confirm-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2 class="wordmark" style="font-size:20px;">CONFIRM STAKE</h2>
+      <p class="tagline" style="margin-bottom:16px;">Room <strong id="jc-code">------</strong></p>
+      <p class="modal-row"><span>Sats per hit</span><span id="jc-sats">0</span></p>
+      <p class="modal-row"><span>Approx. value</span><span id="jc-usd">&mdash;</span></p>
+      <p class="modal-row"><span>Dev fee</span><span id="jc-fee">0%</span></p>
+      <p class="modal-row"><span>If you run low on funds</span><span id="jc-mode">&mdash;</span></p>
+      <p class="modal-row"><span>Your spendable balance</span><span id="jc-balance">&mdash;</span></p>
+      <p class="modal-row"><span>Roughly affordable hits</span><span id="jc-hits">&mdash;</span></p>
+      <p id="jc-error" class="error-text"></p>
+      <button id="jc-accept-btn" class="btn">ACCEPT &amp; PLAY</button>
+      <button id="jc-cancel-btn" class="btn-small" style="width:100%; margin-top:10px; background:transparent; border:1px solid var(--line); color:var(--text-dim);">CANCEL</button>
+    </div>
   </div>
 
   <div id="gameover-modal" class="modal hidden">
