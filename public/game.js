@@ -27,6 +27,16 @@ const challengeBtn = document.getElementById("challenge-btn");
 const lobbyShareLabel = document.getElementById("lobby-share-label");
 const lobbyShareSub = document.getElementById("lobby-share-sub");
 
+const globalLoading = document.getElementById("global-loading");
+const globalLoadingText = document.getElementById("global-loading-text");
+function showLoading(text) {
+  globalLoadingText.textContent = text || "Loading\u2026";
+  globalLoading.classList.remove("hidden");
+}
+function hideLoading() {
+  globalLoading.classList.add("hidden");
+}
+
 const joinConfirmModal = document.getElementById("join-confirm-modal");
 const jcCode = document.getElementById("jc-code");
 const jcSats = document.getElementById("jc-sats");
