@@ -229,4 +229,342 @@ function ensureSocket() {
     waitingOverlay.classList.toggle("hidden", full);
     startOverlay.classList.toggle("hidden", !full || s.started || armed || !bothReady || s.paused);
 
-    if (armed && full && bothReady &&
+    if (armed && full && bothReady && !s.paused) {
+      serveHint.classList.remove("hidden");
+      serveHint.textContent = s.armedServe === mySlot
+        ? "Tap or press SPACE to launch the ball"
+        : "Opponent is serving\u2026";
+    } else {
+      serveHint.classList.add("hidden");
+    }
+
+    if (s.paused) {
+      topupOverlay.classList.remove("hidden");
+      const needsTopUp = s.pausedSlot === mySlot;
+      topupText.textContent = needsTopUp
+        ? `You're short on funds for this hit. Raise your HandCash spending limit or add funds, then retry.`
+        : `Waiting for opponent to top up their HandCash balance/limit\u2026`;
+      topupRetryBtn.classList.toggle("hidden", !needsTopUp);
+    } else {
+      topupOverlay.classList.add("hidden");
+    }
+
+    if (!gameoverModal.classList.contains("hidden") && mySlot) {
+      const iAmReady = s.readyForRematch?.[mySlot];
+      const opponentReady = s.readyForRematch?.[mySlot === "p1" ? "p2" : "p1"];
+      if (iAmReady && !opponentReady) {
+        rematchBtn.textContent = "WAITING FOR OPPONENT\u2026";
+        rematchBtn.disabled = true;
+      }
+    }
+  });
+
+  socket.on("payment_failed", ({ slot, message }) => {
+    pausedText.textContent = `Payment failed for ${slot.toUpperCase()}: ${message} — point over`;
+    pausedOverlay.classList.remove("hidden");
+    setTimeout(() => pausedOverlay.classList.add("hidden"), 3000);
+  });
+
+  socket.on("payment_paused", ({ slot, message }) => {
+    pausedText.textContent = `${slot.toUpperCase()} couldn't cover that hit: ${message}`;
+    pausedOverlay.classList.remove("hidden");
+    setTimeout(() => pausedOverlay.classList.add("hidden"), 3000);
+  });
+
+  socket.on("resumed", () => {
+    topupOverlay.classList.add("hidden");
+  });
+
+  socket.on("game_over", (data) => {
+    if (data.draw) {
+      winnerHeading.textContent = "IT'S A DRAW \u2014 POT SPLIT";
+      finalRallyEl.textContent = data.rally;
+      const potLabel = data.devCut > 0
+        ? `${data.potSats.toLocaleString()} sats${usdEstimate(data.potSats)} (${data.splitAmount.toLocaleString()} each, ${data.devCut.toLocaleString()} fee)`
+        : `${data.potSats.toLocaleString()} sats${usdEstimate(data.potSats)} (${data.splitAmount.toLocaleString()} each)`;
+      finalPotEl.textContent = potLabel;
+    } else {
+      winnerHeading.textContent = `${data.winner} WINS`;
+      finalRallyEl.textContent = data.rally;
+      const potLabel = data.devCut > 0
+        ? `${data.potSats.toLocaleString()} sats${usdEstimate(data.potSats)} (${data.winnerAmount.toLocaleString()} to winner, ${data.devCut.toLocaleString()} fee)`
+        : `${data.potSats.toLocaleString()} sats${usdEstimate(data.potSats)}`;
+      finalPotEl.textContent = potLabel;
+    }
+    finalTxidEl.textContent = data.payoutTxid ? data.payoutTxid.slice(0, 20) + "\u2026" : "\u2014";
+    payoutFailedNote.classList.toggle("hidden", !data.payoutFailed);
+    renderLeaderboard(data.leaderboard);
+    rematchBtn.textContent = "REMATCH";
+    rematchBtn.disabled = false;
+    gameoverModal.classList.remove("hidden");
+  });
+
+  socket.on("rematch_ready", () => {
+    gameoverModal.classList.add("hidden");
+  });
+
+  socket.on("opponent_left", () => {
+    pausedText.textContent = "Opponent left the game. Returning to lobby\u2026";
+    pausedOverlay.classList.remove("hidden");
+    setTimeout(() => { location.href = `/?session=${currentSessionId}`; }, 1800);
+  });
+
+  return socket;
+}function joinRoom(roomCode) {
+  ensureSocket().emit("join_room", { sessionId: currentSessionId, roomCode });
+}
+
+topupRetryBtn.addEventListener("click", () => {
+  topupRetryBtn.disabled = true;
+  topupRetryBtn.textContent = "RETRYING\u2026";
+  socket.emit("resume_after_topup");
+  setTimeout(() => {
+    topupRetryBtn.disabled = false;
+    topupRetryBtn.textContent = "I'VE TOPPED UP \u2014 RETRY";
+  }, 2000);
+});
+
+function renderInviteQr(url) {
+  if (window.QRCode) {
+    QRCode.toCanvas(inviteQrCanvas, url, { width: 180, margin: 1 }, (err) => {
+      if (err) console.error("QR render failed:", err);
+    });
+  }
+}
+
+function selectedOutOfFundsMode() {
+  const checked = document.querySelector('input[name="oof-mode"]:checked');
+  return checked ? checked.value : "pause";
+}
+
+const STAKE_LEVELS = [
+  { level: 1, sats: 1000, label: "Easy", feePercent: 10 },
+  { level: 2, sats: 5000, label: "Easy+", feePercent: 9 },
+  { level: 3, sats: 10000, label: "Casual", feePercent: 8 },
+  { level: 4, sats: 50000, label: "Casual+", feePercent: 7 },
+  { level: 5, sats: 100000, label: "Moderate", feePercent: 6 },
+  { level: 6, sats: 500000, label: "Moderate+", feePercent: 5 },
+  { level: 7, sats: 1000000, label: "High Stakes", feePercent: 4 },
+  { level: 8, sats: 5000000, label: "High Stakes+", feePercent: 3 },
+  { level: 9, sats: 10000000, label: "Whale", feePercent: 2 },
+  { level: 10, sats: 100000000, label: "Max (1 BSV/hit)", feePercent: 1 },
+];
+
+function nearestStakeLevel(sats) {
+  const target = Math.log(Math.max(sats, 1));
+  return STAKE_LEVELS.reduce((best, lvl) =>
+    Math.abs(Math.log(lvl.sats) - target) < Math.abs(Math.log(best.sats) - target) ? lvl : best
+  );
+}
+
+let selectedStake = STAKE_LEVELS[0].sats;
+
+function renderFromSlider() {
+  const lvl = STAKE_LEVELS[parseInt(stakeSlider.value, 10) - 1];
+  selectedStake = lvl.sats;
+  stakeCustomInput.value = "";
+  updateStakeLabels(lvl, lvl.sats);
+}
+
+function renderFromCustom() {
+  const typed = parseInt(stakeCustomInput.value, 10);
+  if (!Number.isFinite(typed) || typed <= 0) return;
+  selectedStake = typed;
+  const lvl = nearestStakeLevel(typed);
+  stakeSlider.value = lvl.level;
+  updateStakeLabels(lvl, typed);
+}
+
+function updateStakeLabels(lvl, actualSats) {
+  stakeLevelLabel.textContent = `${lvl.level}. ${lvl.label}`;
+  stakeSatsLabel.textContent = `${actualSats.toLocaleString()} sats / hit`;
+  stakeFeeLabel.textContent = `${lvl.feePercent}% fee`;
+  stakeUsdLabel.textContent = usdPerBsv ? `\u2248 ${usdEstimate(actualSats).trim()} per hit` : "";
+}
+
+stakeSlider.addEventListener("input", renderFromSlider);
+stakeCustomInput.addEventListener("input", renderFromCustom);
+renderFromSlider();
+
+challengeHandleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); challengeBtn.click(); } });
+challengeBtn.addEventListener("click", async () => {
+  const toHandle = challengeHandleInput.value.trim();
+  if (!toHandle) {
+    lobbyError.textContent = "Enter a HandCash handle to challenge.";
+    return;
+  }
+  lobbyError.textContent = "";
+  challengeBtn.disabled = true;
+  challengeBtn.textContent = "SENDING…";
+  try {
+    const res = await fetch("/api/challenge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: currentSessionId, toHandle, hitFeeSats: selectedStake, outOfFundsMode: selectedOutOfFundsMode() }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      const errMsg = data.error || "Couldn't send that challenge.";
+      if (errMsg.includes("expired")) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        localStorage.setItem(PENDING_CHALLENGE_KEY, toHandle);
+        lobbyGreeting.textContent = "Reconnecting\u2026";
+        location.href = "/auth/handcash/login";
+        return;
+      }
+      lobbyError.textContent = errMsg;
+      return;
+    }
+    lobbyShareLabel.textContent = `Challenge sent to $${toHandle}! Now send them this link too:`;
+    lobbyShareSub.textContent = `The payment note only carries the room code (HandCash notes are short) -- text them the link, or have them scan the QR code.`;
+    shareLink.value = data.joinUrl;
+    renderInviteQr(data.joinUrl);
+    lobbyShare.classList.remove("hidden");
+    lobbyCreate.classList.add("hidden");
+    joinRoom(data.code);
+  } catch (err) {
+    console.error("Challenge request failed:", err);
+    lobbyError.textContent = "Something went wrong sending that challenge: " + err.message;
+  } finally {
+    challengeBtn.disabled = false;
+    challengeBtn.textContent = "CHALLENGE";
+  }
+});
+
+createRoomBtn.addEventListener("click", async () => {
+  lobbyError.textContent = "";
+  const res = await fetch("/api/rooms", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hitFeeSats: selectedStake, outOfFundsMode: selectedOutOfFundsMode() }),
+  });
+  const { code } = await res.json();
+  lobbyShareLabel.textContent = "Send this link to your opponent:";
+  lobbyShareSub.textContent = "Waiting for them to join\u2026";
+  shareLink.value = `${location.origin}/${code}`;
+  renderInviteQr(shareLink.value);
+  lobbyShare.classList.remove("hidden");
+  lobbyCreate.classList.add("hidden");
+  joinRoom(code);
+});
+
+copyLinkBtn.addEventListener("click", () => {
+  shareLink.select();
+  navigator.clipboard?.writeText(shareLink.value);
+});
+
+joinRoomBtn.addEventListener("click", () => {
+  const code = joinCodeInput.value.trim().toUpperCase();
+  if (!code) return;
+  lobbyError.textContent = "";
+  showJoinConfirm(code);
+});
+joinCodeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoomBtn.click(); });
+
+rematchBtn.addEventListener("click", () => {
+  socket.emit("ready_rematch");
+  rematchBtn.textContent = "WAITING FOR OPPONENT\u2026";
+  rematchBtn.disabled = true;
+});
+
+playAgainBtn.addEventListener("click", () => {
+  location.href = `/?session=${currentSessionId}`;
+});
+
+const keys = { up: false, down: false };
+
+function setKey(dir, value) {
+  keys[dir] = value;
+  if (mySlot) socket.emit("input", keys);
+}
+
+function tryServe() {
+  if (mySlot && latestState && latestState.players.length === 2 && !latestState.started && !latestState.paused) {
+    socket.emit("serve");
+  }
+}
+startOverlay.addEventListener("click", tryServe);
+canvas.addEventListener("click", tryServe);
+
+touchUpBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("up", true); });
+touchUpBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("up", false); });
+touchUpBtn.addEventListener("pointerleave", () => setKey("up", false));
+touchUpBtn.addEventListener("pointercancel", () => setKey("up", false));
+
+touchDownBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("down", true); });
+touchDownBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("down", false); });
+touchDownBtn.addEventListener("pointerleave", () => setKey("down", false));
+touchDownBtn.addEventListener("pointercancel", () => setKey("down", false));
+
+window.addEventListener("keydown", (e) => {
+  if (!mySlot) return;
+  if (e.code === "Space") {
+    e.preventDefault();
+    tryServe();
+  }
+  const isMoveKey =
+    (mySlot === "p1" && (e.code === "KeyW" || e.code === "KeyS")) ||
+    (mySlot === "p2" && (e.code === "ArrowUp" || e.code === "ArrowDown"));
+  if (!isMoveKey) return;
+  e.preventDefault();
+  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", true);
+  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", true);
+});
+window.addEventListener("keyup", (e) => {
+  if (!mySlot) return;
+  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", false);
+  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", false);
+});
+
+function renderHud(s) {
+  const p1 = s.players.find((p) => p.slot === "p1");
+  const p2 = s.players.find((p) => p.slot === "p2");
+  p1NameEl.textContent = p1 ? p1.name : "\u2014";
+  p2NameEl.textContent = p2 ? p2.name : "\u2014";
+  potAmountEl.textContent = s.pot.toLocaleString();
+  rallyCountEl.textContent = s.rally;
+  stakeLabel.textContent = s.hitFeeSats?.toLocaleString() ?? "0";
+}
+
+function renderLedger(ledger) {
+  ledgerLinesEl.innerHTML = "";
+  ledger.forEach((e) => {
+    const line = document.createElement("div");
+    line.className = "ledger-line";
+    line.innerHTML = `<span class="dim">${(e.txid || "").slice(0, 12)}\u2026</span> <span class="amt">+${e.amountSats} sats</span> <span class="dim">from</span> ${e.from} <span class="dim">\u2192 pot \u00b7 rally #${e.rally}</span>`;
+    ledgerLinesEl.appendChild(line);
+  });
+}
+
+function renderLeaderboard(list) {
+  leaderboardListEl.innerHTML = "";
+  list.slice(0, 10).forEach((entry, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>#${i + 1} ${entry.winner}</span><span>${entry.rally} hits \u00b7 ${entry.potSats} sats</span>`;
+    leaderboardListEl.appendChild(li);
+  });
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = "#05070a";
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "#232b33";
+  ctx.setLineDash([6, 10]);
+  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (!latestState) return;
+  const { paddles, ball } = latestState;
+
+  ctx.fillStyle = "#3ddc84";
+  ctx.fillRect(10, paddles.p1, PADDLE_W, PADDLE_H);
+  ctx.fillRect(W - PADDLE_W - 10, paddles.p2, PADDLE_W, PADDLE_H);
+
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+  ctx.fillStyle = "#f4b93e";
+  ctx.fill();
+}
+draw();
