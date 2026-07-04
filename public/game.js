@@ -302,4 +302,93 @@ function setKey(dir, value) {
   if (mySlot) socket.emit("input", keys);
 }
 
-function
+function tryServe() {
+  if (mySlot && latestState && latestState.players.length === 2 && !latestState.started) {
+    socket.emit("serve");
+  }
+}
+startOverlay.addEventListener("click", tryServe);
+canvas.addEventListener("click", tryServe);
+
+touchUpBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("up", true); });
+touchUpBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("up", false); });
+touchUpBtn.addEventListener("pointerleave", () => setKey("up", false));
+touchUpBtn.addEventListener("pointercancel", () => setKey("up", false));
+
+touchDownBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); setKey("down", true); });
+touchDownBtn.addEventListener("pointerup", (e) => { e.preventDefault(); setKey("down", false); });
+touchDownBtn.addEventListener("pointerleave", () => setKey("down", false));
+touchDownBtn.addEventListener("pointercancel", () => setKey("down", false));
+
+window.addEventListener("keydown", (e) => {
+  if (!mySlot) return;
+  if (e.code === "Space") {
+    e.preventDefault();
+    tryServe();
+  }
+  const isMoveKey =
+    (mySlot === "p1" && (e.code === "KeyW" || e.code === "KeyS")) ||
+    (mySlot === "p2" && (e.code === "ArrowUp" || e.code === "ArrowDown"));
+  if (!isMoveKey) return;
+  e.preventDefault();
+  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", true);
+  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", true);
+});
+window.addEventListener("keyup", (e) => {
+  if (!mySlot) return;
+  if (e.code === "KeyW" || e.code === "ArrowUp") setKey("up", false);
+  if (e.code === "KeyS" || e.code === "ArrowDown") setKey("down", false);
+});
+
+function renderHud(s) {
+  const p1 = s.players.find((p) => p.slot === "p1");
+  const p2 = s.players.find((p) => p.slot === "p2");
+  p1NameEl.textContent = p1 ? p1.name : "\u2014";
+  p2NameEl.textContent = p2 ? p2.name : "\u2014";
+  potAmountEl.textContent = s.pot.toLocaleString();
+  rallyCountEl.textContent = s.rally;
+  stakeLabel.textContent = s.hitFeeSats?.toLocaleString() ?? "0";
+}
+
+function renderLedger(ledger) {
+  ledgerLinesEl.innerHTML = "";
+  ledger.forEach((e) => {
+    const line = document.createElement("div");
+    line.className = "ledger-line";
+    line.innerHTML = `<span class="dim">${(e.txid || "").slice(0, 12)}\u2026</span> <span class="amt">+${e.amountSats} sats</span> <span class="dim">from</span> ${e.from} <span class="dim">\u2192 pot \u00b7 rally #${e.rally}</span>`;
+    ledgerLinesEl.appendChild(line);
+  });
+}
+
+function renderLeaderboard(list) {
+  leaderboardListEl.innerHTML = "";
+  list.slice(0, 10).forEach((entry, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>#${i + 1} ${entry.winner}</span><span>${entry.rally} hits \u00b7 ${entry.potSats} sats</span>`;
+    leaderboardListEl.appendChild(li);
+  });
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = "#05070a";
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = "#232b33";
+  ctx.setLineDash([6, 10]);
+  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (!latestState) return;
+  const { paddles, ball } = latestState;
+
+  ctx.fillStyle = "#3ddc84";
+  ctx.fillRect(10, paddles.p1, PADDLE_W, PADDLE_H);
+  ctx.fillRect(W - PADDLE_W - 10, paddles.p2, PADDLE_W, PADDLE_H);
+
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
+  ctx.fillStyle = "#f4b93e";
+  ctx.fill();
+}
+draw();
