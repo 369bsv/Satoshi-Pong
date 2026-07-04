@@ -72,18 +72,37 @@ html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--te
 .pot-label { font-family: var(--font-display); font-size: 12px; color: var(--gold); letter-spacing: 0.1em; }
 .pot-amount { font-family: var(--font-display); font-size: 34px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; }
 .pot-unit { font-family: var(--font-display); font-size: 12px; color: var(--text-dim); }
-.stake-row { display: flex; gap: 8px; margin-bottom: 10px; }
-.stake-btn {
-  flex: 1; padding: 10px 0; background: var(--bg); border: 1px solid var(--line); color: var(--text);
-  font-family: var(--font-display); font-size: 13px; border-radius: 3px; cursor: pointer;
+.stake-slider {
+  width: 100%; margin: 8px 0 6px; -webkit-appearance: none; appearance: none;
+  height: 6px; border-radius: 3px; background: var(--line); outline: none;
 }
-.stake-btn:hover { border-color: var(--green); }
-.stake-btn.active { background: var(--green); color: #06120b; border-color: var(--green); font-weight: 700; }
-#stake-custom {
+.stake-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--gold); cursor: pointer; border: 2px solid #06120b;
+}
+.stake-slider::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--gold); cursor: pointer; border: 2px solid #06120b;
+}
+.stake-info {
+  display: flex; justify-content: space-between; font-family: var(--font-display);
+  font-size: 12px; color: var(--text-dim); margin-bottom: 20px;
+}
+#stake-sats-label { color: var(--gold); font-weight: 700; }
+#stake-custom-input {
   width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); color: var(--text);
-  font-family: var(--font-display); border-radius: 3px; outline: none;
+  font-family: var(--font-display); border-radius: 3px; outline: none; margin-bottom: 20px;
 }
-#stake-custom:focus { border-color: var(--green); }
+#stake-custom-input:focus { border-color: var(--green); }
+
+.oof-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.oof-option {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px; border: 1px solid var(--line);
+  border-radius: 3px; cursor: pointer; text-align: left; font-family: var(--font-display); font-size: 11px;
+  color: var(--text-dim); line-height: 1.5;
+}
+.oof-option:has(input:checked) { border-color: var(--green); color: var(--text); }
+.oof-option input { margin-top: 3px; accent-color: var(--green); flex-shrink: 0; }
+.oof-option strong { color: var(--text); }
 .stake-display { font-family: var(--font-display); font-size: 11px; color: var(--text-dim); }
 
 .rally-display { font-family: var(--font-display); font-size: 12px; color: var(--text-dim); letter-spacing: 0.1em; }
