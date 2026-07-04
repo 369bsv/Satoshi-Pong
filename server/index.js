@@ -14,7 +14,26 @@ const TICK_MS = 20;
 const HOUSE_HANDLE = process.env.HANDCASH_HOUSE_HANDLE;
 const HOUSE_AUTH_TOKEN = process.env.HANDCASH_HOUSE_AUTH_TOKEN;
 const DEV_HANDLE = process.env.HANDCASH_DEV_HANDLE;
-const DEV_FEE_PERCENT = parseFloat(process.env.DEV_FEE_PERCENT || "1");
+
+const STAKE_LEVELS = [
+  { level: 1, sats: 1000, label: "Easy", feePercent: 10 },
+  { level: 2, sats: 5000, label: "Easy+", feePercent: 9 },
+  { level: 3, sats: 10000, label: "Casual", feePercent: 8 },
+  { level: 4, sats: 50000, label: "Casual+", feePercent: 7 },
+  { level: 5, sats: 100000, label: "Moderate", feePercent: 6 },
+  { level: 6, sats: 500000, label: "Moderate+", feePercent: 5 },
+  { level: 7, sats: 1000000, label: "High Stakes", feePercent: 4 },
+  { level: 8, sats: 5000000, label: "High Stakes+", feePercent: 3 },
+  { level: 9, sats: 10000000, label: "Whale", feePercent: 2 },
+  { level: 10, sats: 100000000, label: "Max (1 BSV/hit)", feePercent: 1 },
+];
+
+function nearestStakeLevel(sats) {
+  const target = Math.log(Math.max(sats, 1));
+  return STAKE_LEVELS.reduce((best, lvl) =>
+    Math.abs(Math.log(lvl.sats) - target) < Math.abs(Math.log(best.sats) - target) ? lvl : best
+  );
+}
 
 if (!process.env.HANDCASH_APP_ID || !process.env.HANDCASH_APP_SECRET) {
   console.warn("⚠️  HANDCASH_APP_ID / HANDCASH_APP_SECRET are not set. Auth will fail until you set them.");
@@ -75,7 +94,6 @@ app.get("/auth/handcash/callback", async (req, res) => {
 });
 
 const SATS_GRANULARITY = 1000;
-const MIN_HIT_FEE_SATS = SATS_GRANULARITY;
 function roundToGranularity(sats) {
   return Math.max(SATS_GRANULARITY, Math.round(sats / SATS_GRANULARITY) * SATS_GRANULARITY);
 }
@@ -87,21 +105,23 @@ function roundDevCut(potAtEnd, devFeePercent) {
   return Math.min(cut, maxCut);
 }
 const CHALLENGE_FEE_SATS = roundToGranularity(parseInt(process.env.CHALLENGE_FEE_SATS || String(SATS_GRANULARITY), 10));
-const MAX_HIT_FEE_SATS = 1000000;
+
+function clampStake(sats) {
+  const rounded = roundToGranularity(Number.isFinite(sats) ? sats : STAKE_LEVELS[0].sats);
+  return Math.min(Math.max(rounded, STAKE_LEVELS[0].sats), STAKE_LEVELS[STAKE_LEVELS.length - 1].sats);
+}
 
 app.post("/api/rooms", (req, res) => {
-  let hitFeeSats = parseInt(req.body?.hitFeeSats, 10);
-  if (!Number.isFinite(hitFeeSats) || hitFeeSats < MIN_HIT_FEE_SATS) hitFeeSats = MIN_HIT_FEE_SATS;
-  hitFeeSats = roundToGranularity(Math.min(hitFeeSats, MAX_HIT_FEE_SATS));
+  const hitFeeSats = clampStake(parseInt(req.body?.hitFeeSats, 10));
+  const level = nearestStakeLevel(hitFeeSats);
   const room = createRoom(hitFeeSats);
-  res.json({ code: room.code, hitFeeSats: room.hitFeeSats });
+  res.json({ code: room.code, hitFeeSats: room.hitFeeSats, level: level.level, label: level.label, feePercent: level.feePercent });
 });
 
 app.post("/api/challenge", async (req, res) => {
   const { sessionId, toHandle: rawHandle } = req.body || {};
-  let hitFeeSats = parseInt(req.body?.hitFeeSats, 10);
-  if (!Number.isFinite(hitFeeSats) || hitFeeSats < MIN_HIT_FEE_SATS) hitFeeSats = MIN_HIT_FEE_SATS;
-  hitFeeSats = roundToGranularity(Math.min(hitFeeSats, MAX_HIT_FEE_SATS));
+  const hitFeeSats = clampStake(parseInt(req.body?.hitFeeSats, 10));
+  const level = nearestStakeLevel(hitFeeSats);
 
   const session = sessions.get(sessionId);
   if (!session) return res.status(401).json({ error: "Your HandCash session expired. Please reconnect." });
@@ -125,7 +145,7 @@ app.post("/api/challenge", async (req, res) => {
       amountSats: CHALLENGE_FEE_SATS,
       description,
     });
-    res.json({ code: room.code, hitFeeSats: room.hitFeeSats, joinUrl });
+    res.json({ code: room.code, hitFeeSats: room.hitFeeSats, level: level.level, label: level.label, feePercent: level.feePercent, joinUrl });
   } catch (err) {
     deleteRoom(room.code);
     console.error(`Challenge to $${toHandle} failed:`, err.message);
@@ -202,7 +222,8 @@ async function handleMiss(room, missedSlot) {
 
   let payoutTx = null;
   const potAtEnd = room.pot;
-  const devCut = DEV_HANDLE ? roundDevCut(potAtEnd, DEV_FEE_PERCENT) : 0;
+  const feePercent = nearestStakeLevel(room.hitFeeSats).feePercent;
+  const devCut = DEV_HANDLE ? roundDevCut(potAtEnd, feePercent) : 0;
   const winnerAmount = potAtEnd - devCut;
 
   if (potAtEnd > 0) {
