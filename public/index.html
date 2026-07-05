@@ -1,177 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>SATOSHI PONG — LIVE</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css" />
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-</head>
-<body>
+const { HandCashConnect } = require("@handcash/handcash-connect");
 
-  <div id="connect-screen" class="screen">
-    <div class="card">
-      <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
-      <p class="tagline">Every hit is a real BSV payment. Miss, and your opponent takes the pot.</p>
-      <a id="connect-btn" class="btn" href="#">CONNECT HANDCASH</a>
-      <p id="connect-error" class="error-text"></p>
-      <div class="meta"><span>choose your stake per hit</span><span class="dot">&middot;</span><span>real BSV via HandCash</span></div>
-    </div>
-  </div>
+const handCashConnect = new HandCashConnect({
+  appId: process.env.HANDCASH_APP_ID,
+  appSecret: process.env.HANDCASH_APP_SECRET,
+});
 
-  <div id="lobby-screen" class="screen hidden">
-    <div class="card">
-      <h1 class="wordmark">SATOSHI<span>PONG</span></h1>
-      <p class="tagline" id="lobby-greeting">Connected.</p>
+function getAuthUrl(state) {
+  return handCashConnect.getRedirectionUrl(state ? { state } : undefined);
+}
 
-      <div id="lobby-create">
-        <p class="share-label" style="margin-top:0;">Stake level: <span id="stake-level-label">Easy</span></p>
-        <input type="range" id="stake-slider" class="stake-slider" min="1" max="10" step="1" value="1" />
-        <div class="stake-info">
-          <span id="stake-sats-label">1,000 sats / hit</span>
-          <span id="stake-fee-label">10% fee</span>
-        </div>
-        <input id="stake-custom-input" type="number" min="1000" step="1000" placeholder="or type an exact sat amount" />
-        <p id="stake-usd-label" class="overlay-sub" style="text-align:left; margin-top:-14px; margin-bottom:16px;"></p>
+function accountFor(authToken) {
+  return handCashConnect.getAccountFromAuthToken(authToken);
+}
 
-        <p class="share-label">If funds run low:</p>
-        <div class="segmented" id="oof-toggle">
-          <button type="button" class="seg-btn active" data-mode="pause">Pause</button>
-          <button type="button" class="seg-btn" data-mode="draw">Draw</button>
-          <button type="button" class="seg-btn" data-mode="forfeit">Forfeit</button>
-        </div>
-        <p class="overlay-sub" id="oof-desc" style="text-align:left; margin-top:6px; margin-bottom:20px;">Game pauses so they can top up, then continues.</p>
+async function getProfile(authToken) {
+  const account = accountFor(authToken);
+  const { publicProfile } = await account.profile.getCurrentProfile();
+  return publicProfile;
+}
 
-        <p class="share-label">Challenge a HandCash handle:</p>
-        <div class="share-row">
-          <input id="challenge-handle-input" type="text" placeholder="$theirhandle" autocomplete="off" />
-          <button id="challenge-btn" class="btn-small">CHALLENGE</button>
-        </div>
-        <p class="overlay-sub">Sends a 1,000 sat payment with the room code attached.</p>
+async function paySplit({ fromAuthToken, receivers, description }) {
+  const account = accountFor(fromAuthToken);
+  const result = await account.wallet.pay({
+    description,
+    appAction: "SatoshiPong",
+    payments: receivers.map((r) => ({
+      destination: r.destination,
+      currencyCode: "SAT",
+      sendAmount: r.amountSats,
+    })),
+  });
+  return result;
+}
 
-        <div class="divider"><span>or</span></div>
+async function paySats({ fromAuthToken, toHandle, amountSats, description }) {
+  return paySplit({ fromAuthToken, receivers: [{ destination: toHandle, amountSats }], description });
+}
 
-        <button id="create-room-btn" class="btn">CREATE ROOM &amp; SHARE LINK</button>
-      </div>
+async function getSpendableBalanceSats(authToken) {
+  const account = accountFor(authToken);
+  const bsv = await account.wallet.getSpendableBalance("BTC"); // HandCash's legacy ticker for this call -- "BSV" isn't accepted
+  return Math.round(Number(bsv) * 100000000);
+}
 
-      <div id="lobby-share" class="hidden">
-        <p class="share-label" id="lobby-share-label">Send this link to your opponent:</p>
-        <div class="share-row">
-          <input id="share-link" type="text" readonly />
-          <button id="copy-link-btn" class="btn-small">COPY</button>
-        </div>
-        <div class="qr-wrap">
-          <canvas id="invite-qr"></canvas>
-        </div>
-        <p class="overlay-sub" id="lobby-share-sub">Waiting for them to join&hellip;</p>
-      </div>
-
-      <div class="divider"><span>or</span></div>
-
-      <div class="join-row">
-        <input id="join-code-input" type="text" placeholder="ROOM CODE or paste the full link" autocomplete="off" />
-        <button id="join-room-btn" class="btn-small">JOIN</button>
-      </div>
-      <p id="lobby-error" class="error-text"></p>
-    </div>
-  </div>
-
-  <div id="game-screen" class="screen hidden">
-    <header class="hud">
-      <div class="hud-player" id="hud-p1">
-        <span class="hud-label">P1</span>
-        <span class="hud-name" id="p1-name">&mdash;</span>
-      </div>
-      <div class="hud-center">
-        <div class="pot-display">
-          <span class="pot-label">POT</span>
-          <span class="pot-amount" id="pot-amount">0</span>
-          <span class="pot-unit">sats</span>
-        </div>
-        <div class="rally-display">RALLY <span id="rally-count">0</span></div>
-        <div class="stake-display"><span id="stake-label">0</span> sats / hit</div>
-      </div>
-      <div class="hud-player hud-player--right" id="hud-p2">
-        <span class="hud-label">P2</span>
-        <span class="hud-name" id="p2-name">&mdash;</span>
-      </div>
-    </header>
-
-    <main class="court-wrap">
-      <canvas id="court" width="900" height="480"></canvas>
-      <div id="waiting-overlay" class="overlay hidden">
-        <p>Waiting for opponent&hellip;</p>
-      </div>
-      <div id="start-overlay" class="overlay hidden">
-        <p>Press <kbd>SPACE</kbd> or tap here to serve</p>
-        <p class="overlay-sub" id="controls-hint">W / S to move</p>
-      </div>
-      <div id="serve-hint" class="serve-hint hidden"></div>
-      <div id="powerup-banner" class="powerup-banner hidden"></div>
-      <div id="paused-overlay" class="overlay hidden">
-        <p id="paused-text">Payment failed &mdash; point over</p>
-      </div>
-      <div id="topup-overlay" class="overlay hidden">
-        <p id="topup-text">Waiting for opponent to top up&hellip;</p>
-        <button id="topup-retry-btn" class="btn-small hidden" style="margin-top:12px;">I'VE TOPPED UP &mdash; RETRY</button>
-        <button id="topup-cancel-btn" class="btn-small" style="margin-top:10px; background:transparent; border:1px solid var(--line); color:var(--text-dim);">CANCEL GAME</button>
-      </div>
-    </main>
-
-    <div class="touch-controls">
-      <button id="touch-up" class="touch-btn" aria-label="Move up">&#9650;</button>
-      <button id="touch-down" class="touch-btn" aria-label="Move down">&#9660;</button>
-    </div>
-
-    <section class="ledger">
-      <div class="ledger-header">
-        <span class="ledger-title">LIVE TX LOG</span>
-        <span class="ledger-sub">real BSV payments via HandCash</span>
-      </div>
-      <div id="ledger-lines" class="ledger-lines"></div>
-    </section>
-  </div>
-
-  <div id="global-loading" class="modal hidden">
-    <div class="modal-card" style="text-align:center;">
-      <div class="toucan-spinner">
-        <div class="toucan-orbit"><span class="toucan-emoji">🦜</span></div>
-      </div>
-      <p id="global-loading-text" style="font-family: var(--font-display); color: var(--text-dim); margin-top: 14px;">Loading&hellip;</p>
-    </div>
-  </div>
-
-  <div id="join-confirm-modal" class="modal hidden">
-    <div class="modal-card">
-      <h2 class="wordmark" style="font-size:20px;">CONFIRM STAKE</h2>
-      <p class="tagline" style="margin-bottom:16px;">Room <strong id="jc-code">------</strong></p>
-      <p class="modal-row"><span>Per hit</span><span id="jc-sats">0</span></p>
-      <p class="modal-row"><span>Fee</span><span id="jc-fee">0%</span></p>
-      <p class="modal-row"><span>If funds run low</span><span id="jc-mode">&mdash;</span></p>
-      <p class="modal-row"><span>Your balance</span><span id="jc-balance">&mdash;</span></p>
-      <p id="jc-error" class="error-text"></p>
-      <button id="jc-accept-btn" class="btn">ACCEPT &amp; PLAY</button>
-      <button id="jc-cancel-btn" class="btn-small" style="width:100%; margin-top:10px; background:transparent; border:1px solid var(--line); color:var(--text-dim);">CANCEL</button>
-    </div>
-  </div>
-
-  <div id="gameover-modal" class="modal hidden">
-    <div class="modal-card">
-      <h2 id="winner-heading">WINNER</h2>
-      <p class="modal-row"><span>Rally length</span><span id="final-rally">0</span></p>
-      <p class="modal-row"><span>Pot won</span><span id="final-pot">0 sats</span></p>
-      <p class="modal-row modal-txid"><span>Payout tx</span><span id="final-txid">&mdash;</span></p>
-      <p id="payout-failed-note" class="error-text hidden">Payout didn't go through -- the pot is stuck in the house wallet. Contact the app owner.</p>
-      <h3 class="board-heading">LONGEST RALLIES</h3>
-      <ol id="leaderboard-list" class="leaderboard-list"></ol>
-      <button id="rematch-btn" class="btn">REMATCH</button>
-      <button id="play-again-btn" class="btn-small" style="width:100%; margin-top:10px; background:transparent; border:1px solid var(--line); color:var(--text-dim);">LEAVE TO LOBBY</button>
-    </div>
-  </div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script src="game.js"></script>
-</body>
-</html>
+module.exports = { getAuthUrl, getProfile, paySats, paySplit, getSpendableBalanceSats };
