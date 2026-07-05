@@ -7,10 +7,9 @@ const POWERUP_SPAWN_EVERY_HITS = 6;
 const NEGATIVE_TYPES = ["shrink", "reverse", "speedup"];
 const POSITIVE_TYPES = ["grow", "multiball", "slowball"];
 const POWERUP_TYPES = [...NEGATIVE_TYPES, ...POSITIVE_TYPES];
-const EFFECT_DURATION_MS = 6000;
+const EFFECT_HIT_DURATION = 3;
 const SHRUNK_PADDLE_H = 50;
 const GROWN_PADDLE_H = 150;
-const EXTRA_BALL_COUNT = 2;
 
 function makeRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -55,7 +54,6 @@ class Room {
     this.effects = { p1: null, p2: null };
     this.paddleHeights = { p1: PADDLE_H, p2: PADDLE_H };
     this.ballSpeedEffect = null;
-    this.multiballExpiresAt = null;
     this.pendingExtraHits = [];
   }
 
@@ -133,7 +131,6 @@ class Room {
     this.effects = { p1: null, p2: null };
     this.paddleHeights = { p1: PADDLE_H, p2: PADDLE_H };
     this.ballSpeedEffect = null;
-    this.multiballExpiresAt = null;
     this.pendingExtraHits = [];
   }
 
@@ -142,27 +139,28 @@ class Room {
     if (!held) return null;
     this.heldPowerUp[slot] = null;
     const opponent = slot === "p1" ? "p2" : "p1";
-    const expiresAt = Date.now() + EFFECT_DURATION_MS;
+    const hits = EFFECT_HIT_DURATION;
 
     if (held.type === "shrink" || held.type === "reverse") {
-      this.effects[opponent] = { type: held.type, expiresAt };
-      return { type: held.type, activatedBy: slot, target: opponent, expiresAt };
+      this.effects[opponent] = { type: held.type, hitsRemaining: hits };
+      return { type: held.type, activatedBy: slot, target: opponent };
     }
     if (held.type === "speedup") {
-      this.ballSpeedEffect = { type: "fast", expiresAt };
-      return { type: held.type, activatedBy: slot, target: opponent, expiresAt };
+      this.ballSpeedEffect = { type: "fast", hitsRemaining: hits };
+      return { type: held.type, activatedBy: slot, target: opponent };
     }
     if (held.type === "grow") {
-      this.effects[slot] = { type: "grow", expiresAt };
-      return { type: held.type, activatedBy: slot, target: slot, expiresAt };
+      this.effects[slot] = { type: "grow", hitsRemaining: hits };
+      return { type: held.type, activatedBy: slot, target: slot };
     }
     if (held.type === "slowball") {
-      this.ballSpeedEffect = { type: "slow", expiresAt };
-      return { type: held.type, activatedBy: slot, target: slot, expiresAt };
+      this.ballSpeedEffect = { type: "slow", hitsRemaining: hits };
+      return { type: held.type, activatedBy: slot, target: slot };
     }
     if (held.type === "multiball") {
       const source = this.ball;
-      for (let i = 0; i < EXTRA_BALL_COUNT; i++) {
+      const ballCount = Math.min(15, Math.max(2, Math.floor(this.pot / 2000)));
+      for (let i = 0; i < ballCount; i++) {
         const angleJitter = (Math.random() - 0.5) * 3;
         this.extraBalls.push({
           x: source.x, y: source.y,
@@ -170,24 +168,13 @@ class Room {
           vy: (source.vy || 0) + angleJitter,
         });
       }
-      this.multiballExpiresAt = expiresAt;
-      return { type: held.type, activatedBy: slot, target: slot, expiresAt };
+      return { type: held.type, activatedBy: slot, target: slot, ballCount };
     }
     return null;
   }
 
   step() {
     if (this.paused) return null;
-
-    const now = Date.now();
-    for (const slot of ["p1", "p2"]) {
-      if (this.effects[slot] && this.effects[slot].expiresAt <= now) this.effects[slot] = null;
-    }
-    if (this.ballSpeedEffect && this.ballSpeedEffect.expiresAt <= now) this.ballSpeedEffect = null;
-    if (this.multiballExpiresAt && now > this.multiballExpiresAt) {
-      this.extraBalls = [];
-      this.multiballExpiresAt = null;
-    }
 
     this.paddleHeights.p1 = this.effects.p1?.type === "shrink" ? SHRUNK_PADDLE_H
       : this.effects.p1?.type === "grow" ? GROWN_PADDLE_H : PADDLE_H;
@@ -289,6 +276,16 @@ class Room {
     b.x += b.vx > 0 ? 14 : -14;
     this.lastHitBy = slot;
     this.maybeSpawnPowerUp();
+
+    if (this.effects[slot]) {
+      this.effects[slot].hitsRemaining -= 1;
+      if (this.effects[slot].hitsRemaining <= 0) this.effects[slot] = null;
+    }
+    if (this.ballSpeedEffect) {
+      this.ballSpeedEffect.hitsRemaining -= 1;
+      if (this.ballSpeedEffect.hitsRemaining <= 0) this.ballSpeedEffect = null;
+    }
+
     return { type: "hit", slot };
   }
 
@@ -315,7 +312,6 @@ class Room {
       heldPowerUp: this.heldPowerUp,
       effects: this.effects,
       ballSpeedEffect: this.ballSpeedEffect,
-      multiballExpiresAt: this.multiballExpiresAt,
       started: this.started,
       armedServe: this.armedServe,
       pot: this.pot,
