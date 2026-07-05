@@ -39,7 +39,7 @@ async function paySats({ fromAuthToken, toHandle, amountSats, description }) {
 
 async function getSpendableBalanceSats(authToken) {
   const account = accountFor(authToken);
-  const bsv = await account.wallet.getSpendableBalance("BSV");
+  const bsv = await account.wallet.getSpendableBalance("BTC"); // HandCash's legacy ticker for this call -- "BSV" isn't accepted
   return Math.round(Number(bsv) * 100000000);
 }
 
