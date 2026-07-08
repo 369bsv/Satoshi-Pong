@@ -625,18 +625,14 @@ window.addEventListener("keyup", (e) => {
 });
 
 function renderEffectBadge(el, effect) {
-  if (!effect || !effect.expiresAt) {
-    el.classList.add("hidden");
-    return;
-  }
-  const remaining = Math.max(0, Math.ceil((effect.expiresAt - Date.now()) / 1000));
-  if (remaining <= 0) {
-    el.classList.add("hidden");
+  if (!effect || !effect.hitsRemaining || effect.hitsRemaining <= 0) {
+    el.style.visibility = "hidden";
     return;
   }
   const negative = NEGATIVE_POWERUP_TYPES.has(effect.type);
-  el.textContent = `${POWERUP_LABELS[effect.type] || effect.type} \u2022 ${remaining}s`;
-  el.classList.remove("hidden");
+  const hitWord = effect.hitsRemaining === 1 ? "hit" : "hits";
+  el.textContent = `${POWERUP_LABELS[effect.type] || effect.type} \u2022 ${effect.hitsRemaining} ${hitWord} left`;
+  el.style.visibility = "visible";
   el.classList.toggle("negative", negative);
 }
 
