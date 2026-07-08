@@ -297,7 +297,7 @@ async function chargeActivatedPowerUp(room, activatorSlot, result) {
       amountSats: fee,
       rally: room.rally,
     });
-    io.to(room.code).emit("powerup_triggered", { effectType: result.type, activatedBy: activatorSlot, target: result.target, expiresAt: result.expiresAt });
+    io.to(room.code).emit("powerup_triggered", { effectType: result.type, activatedBy: activatorSlot, target: result.target, ballCount: result.ballCount });
     io.to(room.code).emit("state", room.publicState());
   } catch (err) {
     console.warn(`Power-up activation payment failed for ${player.name} in room ${room.code}:`, err.message);
