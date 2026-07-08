@@ -14,7 +14,7 @@
 input[type="text"], input[type="number"] { font-size: 16px; }
 html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-ui); overflow-y: auto; overflow-x: hidden; }
 .hidden { display: none !important; }
-.screen { min-height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; padding: 16px 0; box-sizing: border-box; }
+.screen { min-height: 100vh; min-height: 100dvh; width: 100vw; display: flex; align-items: center; justify-content: center; padding: 16px 0; box-sizing: border-box; }
 
 .card { text-align: center; padding: 48px 56px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); max-width: 460px; width: 100%; }
 @media (max-width: 480px) {
@@ -61,13 +61,20 @@ html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--te
 }
 .join-row input:focus { border-color: var(--green); }
 
-#game-screen { flex-direction: column; padding: 12px 16px; min-height: 100vh; }
-.hud { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-.hud-player { display: flex; flex-direction: column; gap: 2px; min-width: 160px; }
+#game-screen { flex-direction: column; padding: 12px 16px; min-height: 100vh; min-height: 100dvh; }
+.hud { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid var(--line); gap: 8px; }
+.hud-player { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; overflow: hidden; }
 .hud-player--right { align-items: flex-end; text-align: right; }
 .hud-label { font-family: var(--font-display); font-size: 11px; color: var(--text-dim); letter-spacing: 0.1em; }
-.hud-name { font-family: var(--font-display); font-size: 18px; font-weight: 700; }
-.hud-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.hud-name {
+  font-family: var(--font-display); font-size: 18px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.hud-center { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
+@media (max-width: 420px) {
+  .hud-name { font-size: 14px; }
+  .hud-label { font-size: 9px; }
+}
 .pot-display { display: flex; align-items: baseline; gap: 6px; }
 .pot-label { font-family: var(--font-display); font-size: 12px; color: var(--gold); letter-spacing: 0.1em; }
 .pot-amount { font-family: var(--font-display); font-size: 34px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; }
@@ -122,10 +129,9 @@ kbd { background: var(--panel); border: 1px solid var(--line); border-radius: 3p
 }
 
 .powerup-banner {
-  position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
-  font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--gold);
-  background: rgba(5,7,10,0.85); border: 1px solid var(--gold); border-radius: 6px;
-  padding: 10px 18px; pointer-events: none; text-align: center; white-space: nowrap;
+  min-height: 22px; text-align: center;
+  font-family: var(--font-display); font-size: 13px; font-weight: 700; color: var(--gold);
+  padding: 3px 0;
 }
 
 .powerup-btn {
@@ -141,7 +147,7 @@ kbd { background: var(--panel); border: 1px solid var(--line); border-radius: 3p
 
 .hud-effect {
   font-family: var(--font-display); font-size: 10px; color: var(--gold);
-  margin-top: 2px; font-weight: 700;
+  margin-top: 2px; font-weight: 700; min-height: 12px; display: block;
 }
 .hud-effect.negative { color: var(--red); }
 
