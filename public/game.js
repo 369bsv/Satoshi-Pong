@@ -310,7 +310,7 @@ function ensureSocket() {
     setTimeout(() => pausedOverlay.classList.add("hidden"), 3000);
   });
 
-  socket.on("powerup_triggered", ({ effectType, activatedBy, target }) => {
+  socket.on("powerup_triggered", ({ effectType, activatedBy, target, ballCount }) => {
     const who = (slot) => {
       const p = latestState?.players.find((pl) => pl.slot === slot);
       return p ? p.name : slot?.toUpperCase();
@@ -320,19 +320,17 @@ function ensureSocket() {
       shrink: `\ud83d\udd3b ${who(activatedBy)} hit ${who(target)} with SHRINK RAY!`,
       reverse: `\ud83d\udd04 ${who(activatedBy)} REVERSED ${who(target)}'s controls!`,
       grow: `\ud83d\udee1\ufe0f ${who(activatedBy)} grew a BIGGER PADDLE!`,
-      multiball: `\u26aa ${who(activatedBy)} unleashed MULTI-BALL!`,
+      multiball: `\u26aa ${who(activatedBy)} unleashed MULTI-BALL! (+${ballCount} balls)`,
       slowball: `\ud83d\udc0c ${who(activatedBy)} activated SLOW BALL!`,
     };
     powerupBanner.textContent = messages[effectType] || "POWER-UP!";
-    powerupBanner.classList.remove("hidden");
-    setTimeout(() => powerupBanner.classList.add("hidden"), 2200);
+    setTimeout(() => { powerupBanner.textContent = ""; }, 2200);
   });
 
   socket.on("powerup_collected", ({ slot, effectType }) => {
     if (slot !== mySlot) return;
     powerupBanner.textContent = `Collected: ${POWERUP_LABELS[effectType] || effectType}! Tap USE POWER-UP when ready.`;
-    powerupBanner.classList.remove("hidden");
-    setTimeout(() => powerupBanner.classList.add("hidden"), 2200);
+    setTimeout(() => { powerupBanner.textContent = ""; }, 2200);
   });
 
   socket.on("resumed", () => {
